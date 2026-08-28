@@ -1,7 +1,7 @@
 {
   "name": "atlas-registry",
   "private": true,
-  "version": "0.5.5",
+  "version": "0.5.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,13 +10,24 @@
     "lint": "eslint src",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:ui": "node --test scripts/operation-tracker.test.mjs scripts/panel-layout.test.mjs scripts/resource-tree.test.mjs scripts/resource-workspace.test.mjs scripts/ui-layer-contract.test.mjs scripts/toast-state.test.mjs scripts/profile-selection.test.mjs scripts/registry-error.test.mjs scripts/update-settings.test.mjs scripts/updater-contract.test.mjs",
+    "test:ui": "node --test scripts/config-language.test.mjs scripts/nacos-paging.test.mjs scripts/operation-tracker.test.mjs scripts/panel-layout.test.mjs scripts/resource-tree.test.mjs scripts/resource-workspace.test.mjs scripts/ui-layer-contract.test.mjs scripts/toast-state.test.mjs scripts/profile-selection.test.mjs scripts/registry-error.test.mjs scripts/update-settings.test.mjs scripts/updater-contract.test.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/legacy-modes": "^6.5.3",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.9",
     "@tauri-apps/api": "^2.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "smol-toml": "^1.8.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

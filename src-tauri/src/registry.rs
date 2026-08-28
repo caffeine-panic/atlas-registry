@@ -698,6 +698,8 @@ pub enum ResourceAddress {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceNode {
     pub address: ResourceAddress,
@@ -708,11 +710,27 @@ pub struct ResourceNode {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ResourcePage {
     pub parent: ResourceAddress,
     pub items: Vec<ResourceNode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub next_cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub numbered: Option<NumberedPage>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NumberedPage {
+    pub page_number: usize,
+    pub total_pages: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -748,14 +766,38 @@ impl ResourceSearchRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceSearchPage {
     pub scope: ResourceAddress,
     pub items: Vec<ResourceNode>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub matches: Vec<ResourceSearchMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub next_cursor: Option<String>,
     /// Number of identifiers examined by this bounded request. Values are never read by search.
     pub scanned: usize,
     pub exhaustive: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum ResourceSearchField {
+    DataId,
+    Group,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSearchMatch {
+    pub address: ResourceAddress,
+    pub fields: Vec<ResourceSearchField>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]

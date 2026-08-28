@@ -10,7 +10,20 @@ import {
   searchPageRows,
   type MoreRow,
   type ResourceRow,
+  type TreeRow,
 } from "./resourceTree";
+import { ConfigEditor, type ConfigEditorHandle } from "./ConfigEditor";
+import {
+  configLanguageLabels,
+  detectConfigLanguage,
+  type ConfigLanguage,
+} from "./configLanguage";
+import { validateConfig, type ConfigValidationIssue } from "./configValidation";
+import {
+  appendDedupedSearchPage,
+  clampNacosPage,
+  nacosPageCursor,
+} from "./nacosPaging";
 import { UpdateDialog, type UpdateProgress } from "./UpdateDialog";
 import { SettingsDialog } from "./SettingsDialog";
 import { Toast } from "./Toast";
@@ -100,6 +113,8 @@ import {
   type ResourceHistoryDocument,
   type ResourceHistoryEntry,
   type ResourceMutation,
+  type ResourcePage,
+  type ResourceSearchPage,
   type WatchEvent,
   type WatchHandle,
   type WatchStatusState,
@@ -118,6 +133,24 @@ type ResourceWatchView = {
   lastChange?: WatchChangeEvent;
   remoteChanged: boolean;
 };
+
+type NacosListSnapshot = {
+  rows: TreeRow[];
+  pageNumber: number;
+  totalPages: number;
+};
+
+function highlightedText(value: string, query: string) {
+  const index = value.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
+  if (index < 0) return value;
+  return (
+    <>
+      {value.slice(0, index)}
+      <mark>{value.slice(index, index + query.length)}</mark>
+      {value.slice(index + query.length)}
+    </>
+  );
+}
 
 const watchStatusLabels: Record<WatchStatusState, string> = {
   starting: "正在建立监听",
@@ -371,6 +404,18 @@ export function App() {
     cancelOperation,
   );
   const activeOperation = operations.active.main;
+  const [nacosPageNumber, setNacosPageNumber] = useState(1);
+  const [nacosTotalPages, setNacosTotalPages] = useState(1);
+  const normalNacosSnapshot = useRef<NacosListSnapshot | undefined>(undefined);
+  const [nacosSearchPages, setNacosSearchPages] = useState<
+    ResourceSearchPage[]
+  >([]);
+  const [nacosSearchPageIndex, setNacosSearchPageIndex] = useState(0);
+  const [editorLanguageOverride, setEditorLanguageOverride] =
+    useState<ConfigLanguage>();
+  const [validationIssue, setValidationIssue] =
+    useState<ConfigValidationIssue>();
+  const editorRef = useRef<ConfigEditorHandle>(null);
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId);
   const selectedSession = selectedId ? sessions[selectedId] : undefined;
@@ -380,6 +425,32 @@ export function App() {
   const toggleNavigationPanel = (panel: PanelId) => {
     setPanelLayout((current) => savePanelLayout(togglePanel(current, panel)));
   };
+
+  const detectedLanguage = useMemo(
+    () =>
+      document
+        ? detectConfigLanguage({
+            address: document.address,
+            content: document.value.content,
+            contentType: document.contentType ?? undefined,
+            encoding: document.value.encoding,
+          })
+        : "plain",
+    [document],
+  );
+  const editorLanguage = editorLanguageOverride ?? detectedLanguage;
+  const currentNacosSearchPage = nacosSearchPages[nacosSearchPageIndex];
+  const currentSearchMatches = useMemo(() => {
+    const entries = currentNacosSearchPage?.matches ?? [];
+    return new Map(
+      entries.map((match) => [JSON.stringify(match.address), match]),
+    );
+  }, [currentNacosSearchPage]);
+
+  useEffect(() => {
+    setEditorLanguageOverride(undefined);
+    setValidationIssue(undefined);
+  }, [document?.address, document?.version]);
 
   useEffect(() => {
     registryCapabilities()
@@ -408,6 +479,7 @@ export function App() {
   );
 
   const visibleRows = useMemo(() => {
+    if (selectedProfile?.adapter === "nacos") return rows;
     const query = filter.trim().toLocaleLowerCase();
     if (!query) return rows;
     return rows.filter(
@@ -415,7 +487,7 @@ export function App() {
         row.kind === "resource" &&
         row.node.name.toLocaleLowerCase().includes(query),
     );
-  }, [filter, rows]);
+  }, [filter, rows, selectedProfile?.adapter]);
 
   const startOperation = () => operations.start("main");
 
@@ -515,6 +587,25 @@ export function App() {
       );
     } finally {
       finishOperation(operationId);
+    }
+  };
+
+  const rowsForPage = (page: ResourcePage) =>
+    pageRows(
+      page.items,
+      0,
+      page.parent,
+      page.numbered ? undefined : page.nextCursor,
+    );
+
+  const applyRootPage = (page: ResourcePage) => {
+    setRows(rowsForPage(page));
+    if (page.numbered) {
+      setNacosPageNumber(page.numbered.pageNumber);
+      setNacosTotalPages(page.numbered.totalPages);
+    } else {
+      setNacosPageNumber(1);
+      setNacosTotalPages(1);
     }
   };
 
@@ -653,10 +744,17 @@ export function App() {
     }
   };
 
-  const reloadRoot = async (connectionId: string) => {
-    const page = await runList(connectionId, ROOT_ADDRESS);
-    setRows(pageRows(page.items, 0, page.parent, page.nextCursor));
+  const reloadRoot = async (connectionId: string, pageNumber = 1) => {
+    const page = await runList(
+      connectionId,
+      ROOT_ADDRESS,
+      nacosPageCursor(pageNumber),
+    );
+    applyRootPage(page);
     setActiveSearch(undefined);
+    setNacosSearchPages([]);
+    setNacosSearchPageIndex(0);
+    normalNacosSnapshot.current = undefined;
   };
 
   const cancelActiveOperation = async () => {
@@ -797,7 +895,26 @@ export function App() {
     setBusy(true);
     clearToast();
     try {
-      await reloadRoot(selectedSession.id);
+      if (selectedProfile?.adapter === "nacos" && activeSearch) {
+        const page = await runSearch(
+          selectedSession.id,
+          ROOT_ADDRESS,
+          activeSearch.query,
+        );
+        setRows(pageRows(page.items, 0, page.scope));
+        setNacosSearchPages([page]);
+        setNacosSearchPageIndex(0);
+        setActiveSearch({
+          ...activeSearch,
+          scanned: page.scanned,
+          exhaustive: page.exhaustive,
+        });
+      } else if (selectedProfile?.adapter === "nacos") {
+        const page = await fetchNacosListPage(nacosPageNumber);
+        applyRootPage(page);
+      } else {
+        await reloadRoot(selectedSession.id, nacosPageNumber);
+      }
     } catch (reason) {
       showError(reason);
     } finally {
@@ -817,7 +934,20 @@ export function App() {
     clearToast();
     try {
       const page = await runSearch(selectedSession.id, scope, query);
-      setRows(searchPageRows(page.items, page.scope, query, page.nextCursor));
+      if (selectedProfile.adapter === "nacos") {
+        if (!activeSearch) {
+          normalNacosSnapshot.current = {
+            rows,
+            pageNumber: nacosPageNumber,
+            totalPages: nacosTotalPages,
+          };
+        }
+        setRows(pageRows(page.items, 0, page.scope));
+        setNacosSearchPages([page]);
+        setNacosSearchPageIndex(0);
+      } else {
+        setRows(searchPageRows(page.items, page.scope, query, page.nextCursor));
+      }
       setActiveSearch({
         scope: page.scope,
         query,
@@ -826,7 +956,7 @@ export function App() {
       });
       setFilter("");
       showInfo(
-        `${page.items.length} 个匹配项 · 本次检查 ${page.scanned} 个标识${page.exhaustive ? " · 已到当前范围末尾" : " · 可继续加载"}`,
+        `${page.items.length} 个匹配项 · 本次检查 ${page.scanned} 个标识${page.exhaustive ? " · 已到当前范围末尾" : " · 可继续翻页"}`,
       );
     } catch (reason) {
       showError(reason);
@@ -869,6 +999,18 @@ export function App() {
 
   const exitSearch = async () => {
     if (!selectedSession || busy) return;
+    if (selectedProfile?.adapter === "nacos" && normalNacosSnapshot.current) {
+      const snapshot = normalNacosSnapshot.current;
+      setRows(snapshot.rows);
+      setNacosPageNumber(snapshot.pageNumber);
+      setNacosTotalPages(snapshot.totalPages);
+      setActiveSearch(undefined);
+      setNacosSearchPages([]);
+      setNacosSearchPageIndex(0);
+      normalNacosSnapshot.current = undefined;
+      clearToast();
+      return;
+    }
     setBusy(true);
     clearToast();
     try {
@@ -880,8 +1022,102 @@ export function App() {
     }
   };
 
+  const fetchNacosListPage = async (requestedPage: number) => {
+    if (!selectedSession) throw new Error("Nacos 连接尚未打开");
+    let page = await runList(
+      selectedSession.id,
+      ROOT_ADDRESS,
+      nacosPageCursor(requestedPage),
+    );
+    if (page.numbered && page.numbered.pageNumber > page.numbered.totalPages) {
+      const lastPage = clampNacosPage(
+        page.numbered.pageNumber,
+        page.numbered.totalPages,
+      );
+      page = await runList(
+        selectedSession.id,
+        ROOT_ADDRESS,
+        nacosPageCursor(lastPage),
+      );
+      showInfo("列表已变化，已定位到最后一页");
+    }
+    return page;
+  };
+
+  const loadNacosListPage = async (requestedPage: number) => {
+    if (!selectedSession || busy) return;
+    setBusy(true);
+    clearToast();
+    try {
+      const page = await fetchNacosListPage(requestedPage);
+      applyRootPage(page);
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showCachedNacosSearchPage = (index: number) => {
+    const page = nacosSearchPages[index];
+    if (!page) return;
+    setRows(pageRows(page.items, 0, page.scope));
+    setNacosSearchPageIndex(index);
+  };
+
+  const loadNextNacosSearchPage = async () => {
+    if (!selectedSession || !activeSearch || busy || !currentNacosSearchPage)
+      return;
+    const cachedIndex = nacosSearchPageIndex + 1;
+    if (nacosSearchPages[cachedIndex]) {
+      showCachedNacosSearchPage(cachedIndex);
+      return;
+    }
+    if (!currentNacosSearchPage.nextCursor) return;
+    setBusy(true);
+    clearToast();
+    try {
+      const page = await runSearch(
+        selectedSession.id,
+        activeSearch.scope,
+        activeSearch.query,
+        currentNacosSearchPage.nextCursor,
+      );
+      const pages = appendDedupedSearchPage(
+        nacosSearchPages,
+        nacosSearchPageIndex,
+        page,
+      );
+      const visiblePage = pages[cachedIndex];
+      setNacosSearchPages(pages);
+      setNacosSearchPageIndex(cachedIndex);
+      setRows(pageRows(visiblePage.items, 0, visiblePage.scope));
+      setActiveSearch((current) =>
+        current
+          ? {
+              ...current,
+              scanned: current.scanned + page.scanned,
+              exhaustive: page.exhaustive,
+            }
+          : current,
+      );
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openResource = async (index: number, row: ResourceRow) => {
     if (!selectedSession || busy) return;
+    if (
+      document &&
+      !sameAddress(document.address, row.node.address) &&
+      draftValue !== document.value.content &&
+      !globalThis.confirm("选择其他资源会丢弃当前未保存的编辑，是否继续？")
+    ) {
+      return;
+    }
     if (!document || !sameAddress(document.address, row.node.address)) {
       await stopActiveWatch();
     }
@@ -977,6 +1213,30 @@ export function App() {
     setCreateDialogOpen(true);
   };
 
+  const showValidationFailure = (
+    issue: ConfigValidationIssue,
+    action: "保存" | "创建",
+  ) => {
+    setValidationIssue(issue);
+    editorRef.current?.focusOffset(issue.offset);
+    showErrorText(
+      `${action}前语法校验失败：第 ${issue.line} 行，第 ${issue.column} 列：${issue.message}`,
+    );
+  };
+
+  const validateEditorContent = () => {
+    const result = validateConfig(editorLanguage, draftValue);
+    if (result.kind === "valid") {
+      setValidationIssue(undefined);
+      showSuccess(`${configLanguageLabels[editorLanguage]} 语法校验通过`);
+    } else if (result.kind === "unsupported") {
+      setValidationIssue(undefined);
+      showInfo(`${configLanguageLabels[editorLanguage]} 当前仅支持高亮`);
+    } else {
+      showValidationFailure(result.issue, "保存");
+    }
+  };
+
   const prepareCreate = () => {
     if (!selectedProfile) return;
     const contentType = resourceDraft.contentType.trim() || undefined;
@@ -1013,6 +1273,19 @@ export function App() {
       }
       address = { type: "nacosConfig", group, dataId };
     }
+    const createLanguage = detectConfigLanguage({
+      address,
+      content: resourceDraft.content,
+      contentType,
+      encoding: "utf8",
+    });
+    const validation = validateConfig(createLanguage, resourceDraft.content);
+    if (validation.kind === "invalid") {
+      showErrorText(
+        `创建前语法校验失败：第 ${validation.issue.line} 行，第 ${validation.issue.column} 列：${validation.issue.message}`,
+      );
+      if (!globalThis.confirm("语法校验失败，是否仍然创建该资源？")) return;
+    }
     if (
       selectedProfile.adapter === "zookeeper" &&
       resourceDraft.zookeeperMode !== "persistent"
@@ -1041,6 +1314,11 @@ export function App() {
     if (!document?.version) {
       showErrorText("当前资源没有可用于条件更新的版本，请先刷新");
       return;
+    }
+    const validation = validateConfig(editorLanguage, draftValue);
+    if (validation.kind === "invalid") {
+      showValidationFailure(validation.issue, "保存");
+      if (!globalThis.confirm("语法校验失败，是否仍然保存该内容？")) return;
     }
     setPendingMutation({
       operation: "update",
@@ -1128,7 +1406,27 @@ export function App() {
     finishOperation(operationId);
     setPendingMutation(undefined);
     try {
-      await reloadRoot(selectedSession.id);
+      if (selectedProfile?.adapter === "nacos") {
+        if (mutation.operation === "delete" && activeSearch) {
+          const page = await runSearch(
+            selectedSession.id,
+            ROOT_ADDRESS,
+            activeSearch.query,
+          );
+          setRows(pageRows(page.items, 0, page.scope));
+          setNacosSearchPages([page]);
+          setNacosSearchPageIndex(0);
+          setActiveSearch({
+            ...activeSearch,
+            scanned: page.scanned,
+            exhaustive: page.exhaustive,
+          });
+        } else if (mutation.operation === "delete") {
+          applyRootPage(await fetchNacosListPage(nacosPageNumber));
+        }
+      } else {
+        await reloadRoot(selectedSession.id);
+      }
       if (result.operation === "delete") {
         await stopActiveWatch();
         showDocument(undefined);
@@ -1995,11 +2293,13 @@ export function App() {
               >
                 ↻
               </button>
-              <input
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-                placeholder="筛选当前已加载资源…"
-              />
+              {selectedProfile?.adapter !== "nacos" && (
+                <input
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value)}
+                  placeholder="筛选当前已加载资源…"
+                />
+              )}
               <div className="resource-query">
                 <input
                   value={resourceQuery}
@@ -2010,7 +2310,7 @@ export function App() {
                   }}
                   placeholder={
                     selectedProfile?.adapter === "nacos"
-                      ? "搜索 dataId；定位请填 GROUP / dataId"
+                      ? "模糊搜索 group 或 dataId；定位请填 GROUP / dataId"
                       : selectedProfile?.adapter === "zookeeper"
                         ? "搜索节点名；定位请填 /绝对路径"
                         : "搜索 key；定位可填 key 或 base64:…"
@@ -2036,6 +2336,9 @@ export function App() {
                   <span>
                     “{activeSearch.query}” · 已检查 {activeSearch.scanned}{" "}
                     个标识
+                    {selectedProfile?.adapter === "nacos"
+                      ? ` · 第 ${nacosSearchPageIndex + 1} 页`
+                      : ""}
                     {activeSearch.exhaustive ? " · 已完成" : ""}
                   </span>
                   <button disabled={busy} onClick={() => void exitSearch()}>
@@ -2055,10 +2358,18 @@ export function App() {
             {selectedSession && rows.length === 0 && !busy && (
               <div className="empty">
                 <span className="empty-icon">∅</span>
-                <b>{activeSearch ? "没有匹配的资源" : "当前范围没有资源"}</b>
+                <b>
+                  {activeSearch
+                    ? currentNacosSearchPage?.nextCursor
+                      ? "本页结果去重后为空"
+                      : "没有匹配的资源"
+                    : "当前范围没有资源"}
+                </b>
                 <span>
                   {activeSearch
-                    ? "可调整标识关键词，搜索不会读取资源值。"
+                    ? currentNacosSearchPage?.nextCursor
+                      ? "可继续下一页；搜索不会读取资源值。"
+                      : "可调整标识关键词，搜索不会读取资源值。"
                     : "可以刷新，或检查所选 namespace 和权限。"}
                 </span>
               </div>
@@ -2081,6 +2392,9 @@ export function App() {
                 selectedAddress &&
                 JSON.stringify(selectedAddress) ===
                   JSON.stringify(row.node.address);
+              const match = currentSearchMatches.get(
+                JSON.stringify(row.node.address),
+              );
               return (
                 <button
                   className={`node ${selected ? "active" : ""}`}
@@ -2098,10 +2412,80 @@ export function App() {
                   <span className={row.node.readable ? "key" : "folder"}>
                     {row.node.readable ? "◇" : "◆"}
                   </span>
-                  <span className="node-name">{row.node.name}</span>
+                  <span className="node-name">
+                    {match && row.node.address.type === "nacosConfig" ? (
+                      <>
+                        {highlightedText(
+                          row.node.address.group,
+                          activeSearch?.query ?? "",
+                        )}{" "}
+                        /{" "}
+                        {highlightedText(
+                          row.node.address.dataId,
+                          activeSearch?.query ?? "",
+                        )}
+                      </>
+                    ) : (
+                      row.node.name
+                    )}
+                  </span>
+                  {match?.fields.map((field) => (
+                    <span className="match-badge" key={field}>
+                      {field}
+                    </span>
+                  ))}
                 </button>
               );
             })}
+            {selectedSession && selectedProfile?.adapter === "nacos" && (
+              <div className="page-controls">
+                {activeSearch ? (
+                  <>
+                    <button
+                      className="button"
+                      disabled={busy || nacosSearchPageIndex === 0}
+                      onClick={() =>
+                        showCachedNacosSearchPage(nacosSearchPageIndex - 1)
+                      }
+                    >
+                      上一页
+                    </button>
+                    <span>第 {nacosSearchPageIndex + 1} 页</span>
+                    <button
+                      className="button"
+                      disabled={busy || !currentNacosSearchPage?.nextCursor}
+                      onClick={() => void loadNextNacosSearchPage()}
+                    >
+                      下一页
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="button"
+                      disabled={busy || nacosPageNumber <= 1}
+                      onClick={() =>
+                        void loadNacosListPage(nacosPageNumber - 1)
+                      }
+                    >
+                      上一页
+                    </button>
+                    <span>
+                      第 {nacosPageNumber} / {nacosTotalPages} 页
+                    </span>
+                    <button
+                      className="button"
+                      disabled={busy || nacosPageNumber >= nacosTotalPages}
+                      onClick={() =>
+                        void loadNacosListPage(nacosPageNumber + 1)
+                      }
+                    >
+                      下一页
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {busy && (
               <div className="loading-line">
                 正在与注册中心通信…{" "}
@@ -2269,19 +2653,56 @@ export function App() {
                 </div>
               )}
               <div className="editor-header">
-                <span>{document.contentType?.toUpperCase() || "TEXT"}</span>
+                <div className="editor-language-controls">
+                  <select
+                    aria-label="编辑器语言"
+                    value={editorLanguage}
+                    disabled={busy || document.value.encoding === "base64"}
+                    onChange={(event) => {
+                      setEditorLanguageOverride(
+                        event.target.value as ConfigLanguage,
+                      );
+                      setValidationIssue(undefined);
+                    }}
+                  >
+                    {Object.entries(configLanguageLabels).map(
+                      ([language, label]) => (
+                        <option key={language} value={language}>
+                          {label}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                  <button
+                    className="button"
+                    disabled={busy || document.value.encoding === "base64"}
+                    onClick={validateEditorContent}
+                  >
+                    校验语法
+                  </button>
+                </div>
                 <span>
                   {draftValue === document.value.content
                     ? document.value.encoding.toUpperCase()
                     : `${document.value.encoding.toUpperCase()} · 已修改`}
                 </span>
               </div>
-              <textarea
+              <ConfigEditor
+                ref={editorRef}
                 value={draftValue}
                 disabled={busy}
-                onChange={(event) => setDraftValue(event.target.value)}
-                spellCheck={false}
+                language={editorLanguage}
+                onChange={(value) => {
+                  setDraftValue(value);
+                  setValidationIssue(undefined);
+                }}
               />
+              {validationIssue && (
+                <div className="validation-error">
+                  第 {validationIssue.line} 行，第 {validationIssue.column} 列：
+                  {validationIssue.message}
+                </div>
+              )}
               <div className="metadata">
                 {Object.entries(document.metadata).map(([name, value]) => (
                   <div className="metadata-row" key={name}>
