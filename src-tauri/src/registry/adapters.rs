@@ -13,7 +13,7 @@ use nacos_sdk::api::{
     naming::{NamingService, NamingServiceBuilder},
     props::ClientProps,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use crate::credentials::ConnectionSecret;
@@ -23,11 +23,11 @@ use super::{
     AdapterId, AuthenticationMode, ConnectionProfile, EncodedValue, EtcdLeaseAction,
     EtcdLeaseActionResult, EtcdTransaction, EtcdTransactionResult, MutationPhase, MutationResult,
     NacosApiVersion, NacosInstance, NacosNamespace, NacosNativeAction, NacosNativeActionResult,
-    NacosService, NacosServicePage, NativeResourceInfo, RegistryError, RegistryErrorCode,
-    ResourceAddress, ResourceDocument, ResourceHistoryDocument, ResourceHistoryEntry,
-    ResourceHistoryPage, ResourceHistoryRequest, ResourceMutation, ResourceNode, ResourcePage,
-    ResourceSearchPage, ResourceSearchRequest, ZookeeperAclEntry, ZookeeperNativeAction,
-    ZookeeperNativeActionResult,
+    NacosService, NacosServicePage, NativeResourceInfo, NumberedPage, RegistryError,
+    RegistryErrorCode, ResourceAddress, ResourceDocument, ResourceHistoryDocument,
+    ResourceHistoryEntry, ResourceHistoryPage, ResourceHistoryRequest, ResourceMutation,
+    ResourceNode, ResourcePage, ResourceSearchField, ResourceSearchMatch, ResourceSearchPage,
+    ResourceSearchRequest, ZookeeperAclEntry, ZookeeperNativeAction, ZookeeperNativeActionResult,
     mutations::{
         execute_etcd_lease_action, execute_etcd_transaction, execute_zookeeper_native_action,
         mutate_etcd, mutate_nacos, mutate_zookeeper,
@@ -664,6 +664,7 @@ async fn list_etcd(
         parent,
         items,
         next_cursor,
+        numbered: None,
     })
 }
 
@@ -729,6 +730,7 @@ async fn search_etcd(
     Ok(ResourceSearchPage {
         scope: request.scope,
         items,
+        matches: Vec::new(),
         exhaustive: next_cursor.is_none(),
         next_cursor,
         scanned,
@@ -853,6 +855,7 @@ async fn list_zookeeper(
         parent,
         items,
         next_cursor,
+        numbered: None,
     })
 }
 
@@ -957,6 +960,7 @@ async fn search_zookeeper(
     Ok(ResourceSearchPage {
         scope: request.scope,
         items,
+        matches: Vec::new(),
         next_cursor: window.next_offset.map(|offset| offset.to_string()),
         scanned: window.scanned,
         exhaustive: window.next_offset.is_none(),
@@ -1068,6 +1072,8 @@ struct NacosConfigPage {
     #[serde(default)]
     pages_available: usize,
     #[serde(default)]
+    total_count: usize,
+    #[serde(default)]
     page_items: Vec<NacosConfigItem>,
 }
 
@@ -1149,10 +1155,16 @@ async fn list_nacos(
         ));
     }
     let page_number = parse_page_number(cursor)?;
+    let limit = limit.min(50);
     let page = match session.api_version {
-        NacosApiVersion::V2 => fetch_nacos_v2_page(session, page_number, limit, "").await?,
-        NacosApiVersion::V3 => fetch_nacos_v3_page(session, page_number, limit, "").await?,
+        NacosApiVersion::V2 => fetch_nacos_v2_page(session, page_number, limit, "", "").await?,
+        NacosApiVersion::V3 => fetch_nacos_v3_page(session, page_number, limit, "", "").await?,
     };
+    let current_page = page.page_number.max(1);
+    let total_pages = page
+        .pages_available
+        .max(page.total_count.div_ceil(limit))
+        .max(1);
     let next_cursor =
         (page.page_number < page.pages_available).then(|| (page.page_number + 1).to_string());
     let items = page
@@ -1177,7 +1189,132 @@ async fn list_nacos(
         parent,
         items,
         next_cursor,
+        numbered: Some(NumberedPage {
+            page_number: current_page,
+            total_pages,
+        }),
     })
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NacosSearchCursor {
+    version: u8,
+    page_size: usize,
+    data_id_page: usize,
+    group_page: usize,
+    data_id_done: bool,
+    group_done: bool,
+}
+
+impl NacosSearchCursor {
+    fn first(page_size: usize) -> Self {
+        Self {
+            version: 1,
+            page_size,
+            data_id_page: 1,
+            group_page: 1,
+            data_id_done: false,
+            group_done: false,
+        }
+    }
+}
+
+fn parse_nacos_search_cursor(
+    cursor: Option<String>,
+    page_size: usize,
+) -> Result<NacosSearchCursor, RegistryError> {
+    let Some(cursor) = cursor else {
+        return Ok(NacosSearchCursor::first(page_size));
+    };
+    let bytes = STANDARD
+        .decode(cursor)
+        .map_err(|_| RegistryError::validation("Nacos search cursor is invalid"))?;
+    let state = serde_json::from_slice::<NacosSearchCursor>(&bytes)
+        .map_err(|_| RegistryError::validation("Nacos search cursor is invalid"))?;
+    if state.version != 1
+        || state.page_size != page_size
+        || state.data_id_page == 0
+        || state.group_page == 0
+    {
+        return Err(RegistryError::validation(
+            "Nacos search cursor is incompatible with this request",
+        ));
+    }
+    Ok(state)
+}
+
+fn encode_nacos_search_cursor(cursor: &NacosSearchCursor) -> Result<String, RegistryError> {
+    serde_json::to_vec(cursor)
+        .map(|bytes| STANDARD.encode(bytes))
+        .map_err(|_| RegistryError::invalid_response("cannot encode Nacos search cursor"))
+}
+
+async fn fetch_nacos_search_page(
+    session: &NacosSession,
+    page_number: usize,
+    limit: usize,
+    data_id: &str,
+    group: &str,
+) -> Result<NacosConfigPage, RegistryError> {
+    match session.api_version {
+        NacosApiVersion::V2 => {
+            fetch_nacos_v2_page(session, page_number, limit, data_id, group).await
+        }
+        NacosApiVersion::V3 => {
+            fetch_nacos_v3_page(session, page_number, limit, data_id, group).await
+        }
+    }
+}
+
+fn nacos_search_node(item: NacosConfigItem) -> (String, ResourceNode) {
+    let group = item.group_name;
+    let data_id = item.data_id;
+    let key = format!("{group}\0{data_id}");
+    (
+        key,
+        ResourceNode {
+            address: ResourceAddress::NacosConfig {
+                group: group.clone(),
+                data_id: data_id.clone(),
+            },
+            name: format!("{group} / {data_id}"),
+            readable: true,
+            has_children: Some(false),
+        },
+    )
+}
+
+fn merge_nacos_search_items(
+    data_id_items: Vec<NacosConfigItem>,
+    group_items: Vec<NacosConfigItem>,
+) -> (Vec<ResourceNode>, Vec<ResourceSearchMatch>) {
+    let mut items = Vec::new();
+    let mut matches = Vec::<ResourceSearchMatch>::new();
+    let mut indexes = BTreeMap::<String, usize>::new();
+    for item in data_id_items {
+        let (key, node) = nacos_search_node(item);
+        indexes.insert(key, items.len());
+        matches.push(ResourceSearchMatch {
+            address: node.address.clone(),
+            fields: vec![ResourceSearchField::DataId],
+        });
+        items.push(node);
+    }
+    for item in group_items {
+        let (key, node) = nacos_search_node(item);
+        if let Some(index) = indexes.get(&key).copied() {
+            matches[index].fields.push(ResourceSearchField::Group);
+        } else {
+            indexes.insert(key, items.len());
+            matches.push(ResourceSearchMatch {
+                address: node.address.clone(),
+                fields: vec![ResourceSearchField::Group],
+            });
+            items.push(node);
+        }
+    }
+    (items, matches)
 }
 
 async fn search_nacos(
@@ -1190,39 +1327,73 @@ async fn search_nacos(
             "Nacos search uses the flat configuration scope",
         ));
     }
-    let page_number = parse_page_number(request.cursor.clone())?;
-    let page = match session.api_version {
-        NacosApiVersion::V2 => {
-            fetch_nacos_v2_page(session, page_number, limit, &request.query).await?
-        }
-        NacosApiVersion::V3 => {
-            fetch_nacos_v3_page(session, page_number, limit, &request.query).await?
+    let page_size = limit.clamp(2, 50);
+    let data_id_limit = page_size.div_ceil(2);
+    let group_limit = page_size / 2;
+    let mut cursor = parse_nacos_search_cursor(request.cursor.clone(), page_size)?;
+    let data_id_page = async {
+        if cursor.data_id_done {
+            Ok(None)
+        } else {
+            fetch_nacos_search_page(
+                session,
+                cursor.data_id_page,
+                data_id_limit,
+                &request.query,
+                "",
+            )
+            .await
+            .map(Some)
         }
     };
-    let scanned = page.page_items.len();
-    let next_cursor =
-        (page.page_number < page.pages_available).then(|| (page.page_number + 1).to_string());
-    let items = page
-        .page_items
-        .into_iter()
-        .map(|item| {
-            let group = item.group_name;
-            let data_id = item.data_id;
-            ResourceNode {
-                address: ResourceAddress::NacosConfig {
-                    group: group.clone(),
-                    data_id: data_id.clone(),
-                },
-                name: format!("{group} / {data_id}"),
-                readable: true,
-                has_children: Some(false),
-            }
-        })
-        .collect();
+    let group_page = async {
+        if cursor.group_done {
+            Ok(None)
+        } else {
+            fetch_nacos_search_page(session, cursor.group_page, group_limit, "", &request.query)
+                .await
+                .map(Some)
+        }
+    };
+    let (data_id_page, group_page): (
+        Result<Option<NacosConfigPage>, RegistryError>,
+        Result<Option<NacosConfigPage>, RegistryError>,
+    ) = tokio::join!(data_id_page, group_page);
+    let data_id_page = data_id_page?;
+    let group_page = group_page?;
+    let scanned = data_id_page
+        .as_ref()
+        .map_or(0, |page| page.page_items.len())
+        + group_page.as_ref().map_or(0, |page| page.page_items.len());
+
+    let data_id_items = if let Some(page) = data_id_page {
+        cursor.data_id_done = page.page_number >= page.pages_available;
+        if !cursor.data_id_done {
+            cursor.data_id_page = page.page_number + 1;
+        }
+        page.page_items
+    } else {
+        Vec::new()
+    };
+    let group_items = if let Some(page) = group_page {
+        cursor.group_done = page.page_number >= page.pages_available;
+        if !cursor.group_done {
+            cursor.group_page = page.page_number + 1;
+        }
+        page.page_items
+    } else {
+        Vec::new()
+    };
+    let (items, matches) = merge_nacos_search_items(data_id_items, group_items);
+    let exhaustive = cursor.data_id_done && cursor.group_done;
+    let next_cursor = (!exhaustive)
+        .then(|| encode_nacos_search_cursor(&cursor))
+        .transpose()?;
     Ok(ResourceSearchPage {
         scope: request.scope,
         items,
-        exhaustive: next_cursor.is_none(),
+        matches,
+        exhaustive,
         next_cursor,
         scanned,
     })
@@ -1233,12 +1404,13 @@ async fn fetch_nacos_v2_page(
     page_number: usize,
     limit: usize,
     data_id: &str,
+    group: &str,
 ) -> Result<NacosConfigPage, RegistryError> {
     let url = format!(
         "{}/nacos/v1/cs/configs",
         nacos_server_base(&session.endpoint)
     );
-    session
+    let response = session
         .request_auth
         .apply_for_config(
             session.http.get(url),
@@ -1248,7 +1420,7 @@ async fn fetch_nacos_v2_page(
         .query(&[
             ("search", "blur".to_owned()),
             ("dataId", data_id.to_owned()),
-            ("group", String::new()),
+            ("group", group.to_owned()),
             (
                 "tenant",
                 public_namespace_for_sdk(&session.namespace).to_owned(),
@@ -1260,15 +1432,60 @@ async fn fetch_nacos_v2_page(
         .await
         .map_err(nacos_http_error)?
         .error_for_status()
-        .map_err(nacos_http_error)?
-        .json::<NacosConfigPage>()
-        .await
-        .map_err(|error| {
+        .map_err(nacos_http_error)?;
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let content_encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let declared_length = response.content_length();
+    let body = response.bytes().await.map_err(|error| {
+        RegistryError::invalid_response(format!(
+            "[DEBUG-nacos-v2-body] cannot read response body: {}",
+            error.without_url()
+        ))
+    })?;
+    serde_json::from_slice::<NacosConfigPage>(&body).map_err(|error| {
+        let generic_shape = match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(serde_json::Value::Object(object)) => {
+                let keys = object.keys().cloned().collect::<Vec<_>>();
+                format!("object(keys={keys:?})")
+            }
+            Ok(value) => json_value_kind(&value).to_string(),
+            Err(generic_error) => format!(
+                "invalid({:?}@{}:{})",
+                generic_error.classify(),
+                generic_error.line(),
+                generic_error.column()
+            ),
+        };
             RegistryError::invalid_response(format!(
-                "invalid Nacos 2.x list response: {}",
-                error.without_url()
+                "[DEBUG-nacos-v2-body] status={status}, contentType={content_type:?}, contentEncoding={content_encoding:?}, declaredLength={declared_length:?}, bytes={}, typed={:?}@{}:{}, generic={generic_shape}",
+                body.len(),
+                error.classify(),
+                error.line(),
+                error.column()
             ))
         })
+}
+
+fn json_value_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
 }
 
 async fn fetch_nacos_v3_page(
@@ -1276,6 +1493,7 @@ async fn fetch_nacos_v3_page(
     page_number: usize,
     limit: usize,
     data_id: &str,
+    group: &str,
 ) -> Result<NacosConfigPage, RegistryError> {
     let url = format!(
         "{}/nacos/v3/admin/cs/config/list",
@@ -1296,7 +1514,7 @@ async fn fetch_nacos_v3_page(
                 public_namespace_for_api(&session.namespace).to_owned(),
             ),
             ("dataId", data_id.to_owned()),
-            ("groupName", String::new()),
+            ("groupName", group.to_owned()),
             ("configDetail", String::new()),
             ("search", "blur".to_owned()),
         ])
@@ -1900,11 +2118,12 @@ fn adapter_mismatch(adapter: AdapterId, address: &ResourceAddress) -> RegistryEr
 #[cfg(test)]
 mod tests {
     use super::{
-        NacosConfigDetailWire, NacosHistoryPageWire, etcd_cursor_after, etcd_immediate_child,
-        nacos_http_error, normalize_nacos_config_detail, normalize_nacos_history_page,
-        normalize_zookeeper_acl, page_zookeeper_children, search_zookeeper_children,
+        NacosConfigDetailWire, NacosConfigItem, NacosHistoryPageWire, encode_nacos_search_cursor,
+        etcd_cursor_after, etcd_immediate_child, merge_nacos_search_items, nacos_http_error,
+        normalize_nacos_config_detail, normalize_nacos_history_page, normalize_zookeeper_acl,
+        page_zookeeper_children, parse_nacos_search_cursor, search_zookeeper_children,
     };
-    use crate::registry::ResourceAddress;
+    use crate::registry::{ResourceAddress, ResourceSearchField};
 
     #[test]
     fn etcd_cursor_keeps_exact_keys_and_folder_prefixes_in_separate_ranges() {
@@ -1918,6 +2137,52 @@ mod tests {
         assert!(etcd_cursor_after(&exact.0, exact.2) < dotted.0);
         assert!(etcd_cursor_after(&dotted.0, dotted.2) < b"a/x".to_vec());
         assert!(etcd_cursor_after(&nested.0, nested.2) > b"a/x".to_vec());
+    }
+
+    #[test]
+    fn nacos_search_cursor_is_opaque_versioned_and_page_size_bound() {
+        let mut cursor = parse_nacos_search_cursor(None, 50).unwrap();
+        cursor.data_id_page = 3;
+        cursor.group_page = 2;
+        cursor.group_done = true;
+        let encoded = encode_nacos_search_cursor(&cursor).unwrap();
+        let decoded = parse_nacos_search_cursor(Some(encoded.clone()), 50).unwrap();
+        assert_eq!(decoded.data_id_page, 3);
+        assert_eq!(decoded.group_page, 2);
+        assert!(decoded.group_done);
+        assert!(parse_nacos_search_cursor(Some(encoded), 25).is_err());
+        assert!(parse_nacos_search_cursor(Some("not-a-cursor".to_owned()), 50).is_err());
+    }
+
+    #[test]
+    fn nacos_search_merge_prioritizes_data_id_and_marks_dual_matches_once() {
+        let duplicate = NacosConfigItem {
+            data_id: "trip-service".to_owned(),
+            group_name: "trip-group".to_owned(),
+        };
+        let group_only = NacosConfigItem {
+            data_id: "payments".to_owned(),
+            group_name: "trip-group".to_owned(),
+        };
+        let (items, matches) = merge_nacos_search_items(
+            vec![duplicate],
+            vec![
+                NacosConfigItem {
+                    data_id: "trip-service".to_owned(),
+                    group_name: "trip-group".to_owned(),
+                },
+                group_only,
+            ],
+        );
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].name, "trip-group / trip-service");
+        assert_eq!(items[1].name, "trip-group / payments");
+        assert_eq!(
+            matches[0].fields,
+            vec![ResourceSearchField::DataId, ResourceSearchField::Group]
+        );
+        assert_eq!(matches[1].fields, vec![ResourceSearchField::Group]);
     }
 
     #[test]

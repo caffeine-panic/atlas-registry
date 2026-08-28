@@ -23,8 +23,9 @@ Atlas Registry 是面向开发者与运维人员的跨平台桌面客户端，�
 - 三栏布局：连接列表、按需加载的资源树、资源详情与编辑器。
 - etcd：prefix/key 浏览，二进制安全读取，revision/lease 元数据。
 - ZooKeeper：znode 懒加载，数据与 Stat 元数据。
-- Nacos：按 namespace 分页列举配置，展示 group/dataId，读取配置内容。
+- Nacos：按 namespace 每页 50 条列举配置，展示 group/dataId，并可跨全部分页对两个标识字段做 OR 模糊搜索。
 - 支持刷新、当前范围筛选、直接定位、分页/继续加载和大值保护；当前内联展示上限为 1 MiB。
+- 配置正文支持 JSON、YAML、XML、Properties/INI、TOML 语法高亮；JSON、YAML、XML、TOML 可显式校验，并在保存或创建前主动检查。
 
 ### 变更与保护
 

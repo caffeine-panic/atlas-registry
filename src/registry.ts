@@ -14,6 +14,11 @@ export type { ConnectionProfile } from "./generated/ConnectionProfile";
 export type { NacosApiVersion } from "./generated/NacosApiVersion";
 export type { NacosNativeAction } from "./generated/NacosNativeAction";
 export type { ResourceAddress } from "./generated/ResourceAddress";
+export type { ResourceNode } from "./generated/ResourceNode";
+export type { ResourcePage } from "./generated/ResourcePage";
+export type { ResourceSearchField } from "./generated/ResourceSearchField";
+export type { ResourceSearchMatch } from "./generated/ResourceSearchMatch";
+export type { ResourceSearchPage } from "./generated/ResourceSearchPage";
 export type { WatchEvent } from "./generated/WatchEvent";
 export type { WatchStatusState } from "./generated/WatchStatusState";
 
@@ -22,6 +27,8 @@ import type { ConnectionEnvironment } from "./generated/ConnectionEnvironment";
 import type { ConnectionProfile } from "./generated/ConnectionProfile";
 import type { NacosNativeAction } from "./generated/NacosNativeAction";
 import type { ResourceAddress } from "./generated/ResourceAddress";
+import type { ResourcePage } from "./generated/ResourcePage";
+import type { ResourceSearchPage } from "./generated/ResourceSearchPage";
 import type { WatchEvent } from "./generated/WatchEvent";
 import type { UpdateProxySettings } from "./updateSettings";
 
@@ -99,27 +106,6 @@ export type AppUpdateEvent =
   | { event: "started"; data: { contentLength?: number } }
   | { event: "progress"; data: { downloaded: number; contentLength?: number } }
   | { event: "finished" };
-
-export type ResourceNode = {
-  address: ResourceAddress;
-  name: string;
-  readable: boolean;
-  hasChildren: boolean | null;
-};
-
-export type ResourcePage = {
-  parent: ResourceAddress;
-  items: ResourceNode[];
-  nextCursor?: string;
-};
-
-export type ResourceSearchPage = {
-  scope: ResourceAddress;
-  items: ResourceNode[];
-  nextCursor?: string;
-  scanned: number;
-  exhaustive: boolean;
-};
 
 export type ResourceHistoryEntry = {
   revisionId: string;
@@ -581,7 +567,7 @@ export function searchResources(
     request: {
       connectionId,
       operationId,
-      search: { scope, query, cursor, limit: 100 },
+      search: { scope, query, cursor, limit: 50 },
     },
   });
 }

@@ -41,11 +41,13 @@ flowchart LR
 
 三层分工，新代码必须遵守：
 
-1. **纯函数状态模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React，承载全部可测试的状态转换逻辑；`scripts/*.test.mjs` 直接转译并断言这些模块。
+1. **纯函数状态模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/nacosPaging.ts`、`src/configLanguage.ts`、`src/configValidation.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React，承载全部可测试的状态转换逻辑；`scripts/*.test.mjs` 直接导入或转译并断言这些模块。
 2. **Hook 组合层**（`src/useResourceWorkspace.ts`、`src/useRegistryOperations.ts`）：把纯函数模块与 IPC 调用、取消、乐观状态接到 React 上。
 3. **组件层**（`src/App.tsx` 与各 `*Dialog.tsx`）：渲染与事件接线，不写业务规则。
 
 `src/registry.ts` 是前端唯一允许出现 `invoke` 的文件。它给每个 Rust 命令一个类型化函数，watch 等流式结果通过 `Channel` 回调。
+
+资源正文由 `ConfigEditor.tsx` 中的 CodeMirror 6 编辑器承载。语言识别优先使用实际编码、Nacos `contentType` 和资源标识扩展名；JSON、YAML、XML、TOML 校验只在用户点击校验、保存或创建时执行，失败默认阻止但允许用户明确强制继续。校验不自动格式化正文，也不替代 Rust 侧既有的条件变更、审计和结果不确定处理。
 
 ## IPC 契约
 
@@ -92,6 +94,7 @@ flowchart LR
 破坏以下任何一条都是回归，评审与测试都以此为准：
 
 1. **有界 IO**：内联 value ≤ 1 MiB；浏览 / 搜索 / 历史分页且带游标；审计读取从文件尾部倒序、每页扫描 ≤ 512 KiB；ZooKeeper 单父节点支持到 100k 直接子节点，超界返回 `resourceExhausted` 而不是扫描。
+   Nacos 普通列表固定每页最多 50 条；模糊搜索分别查询 dataId 与 group，单次翻页每路至多读取一个上游页，合并后允许短页，不为总页数、填满页面或全局排序扫描全部命中。
 2. **条件变更**：etcd revision、ZooKeeper version/aversion、Nacos MD5 / SHA-256 指纹；Nacos 管理 API 无 CAS，采用「读时指纹比较 + 写后有界回读确认（≤ 20 次 × 200 ms）」并在 UI 明示竞争窗口。
 3. **结果不确定性诚实上报**：取消 / 超时 / 提交后传输错误 → `mutationOutcomeUnknown`，不自动重试；远端成功但审计落盘失败 → `auditIncomplete`，两者不得混淆。
 4. **Nacos SDK cache 不可信**：配置正文读取、写前检查、写后确认、周期对账一律走版本对应的权威 HTTP API；SDK 只承担 gRPC mutation、listener 与临时实例 session（原因见 ADR-0001 上游约束）。

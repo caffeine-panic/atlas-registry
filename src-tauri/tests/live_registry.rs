@@ -407,10 +407,14 @@ fn nacos_live_session_can_browse_the_config_list() {
             .list(&session.id, ResourceAddress::Root, None, 100)
             .await
             .expect("Nacos config list should be browsable");
-        service
-            .list(&session.id, page.parent, None, 100)
-            .await
-            .expect("the same Nacos session should be reusable");
+        for attempt in 1..=40 {
+            service
+                .list(&session.id, page.parent.clone(), None, 100)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("Nacos list attempt {attempt} should succeed: {error:?}")
+                });
+        }
         service
             .search(
                 &session.id,

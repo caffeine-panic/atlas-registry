@@ -118,3 +118,7 @@ mutation command 会在应用配置目录的 `mutation-audit.jsonl` 写入 JSON 
 应用内“历史”读取同一 JSONL 的严格脱敏 DTO，按字节游标从文件尾部倒序分页，每页最多扫描 512 KiB。Nacos 资源详情另提供服务端历史入口：列表不包含历史 content，选择具体 revision 后才调用详情接口并受 1 MiB 内联边界保护。
 
 主界面的“诊断包”只在用户显式选择保存位置后写出 JSON。内容包括应用/运行时版本、adapter capability 描述，以及按协议、环境、TLS 和认证状态聚合的连接计数；不包含连接 ID/名称、endpoint、namespace、用户名、证书路径、资源地址/value 或任何凭据，并由 sentinel 单元测试约束。
+
+Nacos 配置浏览固定每页最多 50 条。普通列表返回当前页与总页数；模糊搜索在当前 namespace 内分别查询 `dataId` 和 `group`，使用不透明复合游标有界续页，并在前端合并去重。搜索只读取标识，不读取配置正文；搜索页不计算总页数，合并后可能是短页。
+
+资源详情使用 CodeMirror 6。`src/configLanguage.ts` 负责保守的语言识别，`src/configValidation.ts` 负责 JSON、YAML、XML、TOML 的显式校验；Properties/INI 与纯文本只高亮。校验错误不得把正文写入 Toast、日志、诊断包或审计，只报告语言、行列和解析原因。
