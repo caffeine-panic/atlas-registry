@@ -176,6 +176,10 @@ html[data-platform="macos"] .topbar {
 .shell[data-resources="collapsed"] {
   --resources-width: 42px;
 }
+.shell[data-resizing="true"] {
+  transition: none;
+  user-select: none;
+}
 .connections,
 .tree {
   position: relative;
@@ -221,6 +225,34 @@ html[data-platform="macos"] .topbar {
   font-size: 20px;
   line-height: 1;
   transform: translateY(-1px);
+}
+.panel-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  outline: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panel-resizer::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  background: #55d6be;
+  content: "";
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after,
+.shell[data-resizing="true"] .panel-resizer::after {
+  opacity: 1;
 }
 .panel-rail-label {
   position: absolute;

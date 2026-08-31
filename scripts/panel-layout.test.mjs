@@ -25,11 +25,13 @@ test("connections and resources can be collapsed independently", () => {
   assert.deepEqual(connectionsCollapsed, {
     connections: "collapsed",
     resources: "expanded",
+    widths: panelLayout.DEFAULT_PANEL_LAYOUT.widths,
   });
 
   assert.deepEqual(panelLayout.togglePanel(connectionsCollapsed, "resources"), {
     connections: "collapsed",
     resources: "collapsed",
+    widths: panelLayout.DEFAULT_PANEL_LAYOUT.widths,
   });
 });
 
@@ -48,6 +50,7 @@ test("the last valid panel layout is restored on startup", () => {
   assert.deepEqual(panelLayout.loadPanelLayout(storage), {
     connections: "collapsed",
     resources: "expanded",
+    widths: panelLayout.DEFAULT_PANEL_LAYOUT.widths,
   });
 });
 
@@ -60,15 +63,15 @@ test("panel layout changes are persisted without application data", () => {
       savedValue = value;
     },
   };
-  const layout = {
-    connections: "expanded",
-    resources: "collapsed",
-  };
+  const layout = panelLayout.togglePanel(
+    panelLayout.DEFAULT_PANEL_LAYOUT,
+    "resources",
+  );
 
   assert.deepEqual(panelLayout.savePanelLayout(layout, storage), layout);
   assert.equal(savedKey, "atlas.panelLayout");
   assert.deepEqual(JSON.parse(savedValue), {
-    version: 1,
+    version: 2,
     layout,
   });
 });
@@ -95,4 +98,45 @@ test("invalid or unavailable storage falls back to both panels expanded", () => 
     }),
     panelLayout.DEFAULT_PANEL_LAYOUT,
   );
+});
+
+test("expanded navigation panels can be resized continuously within the usable window", () => {
+  const widened = panelLayout.resizePanel(
+    panelLayout.DEFAULT_PANEL_LAYOUT,
+    "resources",
+    246,
+    1_400,
+  );
+
+  assert.equal(widened.widths.resources, 576);
+  assert.equal(
+    panelLayout.resizePanel(widened, "resources", -10_000, 1_400).widths
+      .resources,
+    panelLayout.PANEL_WIDTH_LIMITS.resources.min,
+  );
+  assert.equal(
+    panelLayout.resizePanel(widened, "resources", 10_000, 1_400).widths
+      .resources,
+    790,
+    "the detail workspace keeps its minimum width while the resource panel uses the remaining space",
+  );
+});
+
+test("resized panel widths are persisted and old visibility-only layouts migrate", () => {
+  const migrated = panelLayout.loadPanelLayout({
+    getItem: () =>
+      JSON.stringify({
+        version: 1,
+        layout: {
+          connections: "collapsed",
+          resources: "expanded",
+        },
+      }),
+  });
+
+  assert.deepEqual(migrated, {
+    connections: "collapsed",
+    resources: "expanded",
+    widths: panelLayout.DEFAULT_PANEL_LAYOUT.widths,
+  });
 });
