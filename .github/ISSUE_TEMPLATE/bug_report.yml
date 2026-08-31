@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a reproducible Atlas Registry defect
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Atlas Registry. Do not include production values, passwords, tokens, private keys, credential files, or private endpoints. Report security issues privately through the Security tab.
+  - type: input
+    id: version
+    attributes:
+      label: Atlas Registry version
+      placeholder: 0.5.8
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter
+      options:
+        - etcd
+        - ZooKeeper
+        - Nacos
+        - Application shell, updater, or shared UI
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: Use "not applicable" for application-only defects.
+      placeholder: etcd 3.7.0
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic resource names and values.
+      placeholder: |
+        1. Create a synthetic connection...
+        2. Open...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Attach the in-app diagnostic export when useful. Review attachments before upload.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety confirmation
+      options:
+        - label: I removed production values, credentials, private keys, tokens, and private endpoints.
+          required: true

@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a user-visible Atlas Registry capability
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the workflow or risk that is difficult today, without prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should a user be able to complete or verify?
+    validations:
+      required: true
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Scope
+      multiple: true
+      options:
+        - Shared application workflow
+        - etcd
+        - ZooKeeper
+        - Nacos
+        - Packaging or distribution
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Production-safety considerations
+      description: Note expected concurrency, audit, credential, bounded-I/O, or unknown-outcome behavior.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

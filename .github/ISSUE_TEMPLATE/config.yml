@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage questions and support
+    url: https://github.com/caffeine-panic/atlas-registry/discussions
+    about: Ask for installation, connection, or workflow help.
+  - name: Private security report
+    url: https://github.com/caffeine-panic/atlas-registry/security/advisories/new
+    about: Report a suspected vulnerability without disclosing it publicly.
