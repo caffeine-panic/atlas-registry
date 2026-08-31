@@ -21,7 +21,7 @@ Atlas Registry 是一个跨平台桌面客户端，用统一的资源管理器�
 - 分页、懒加载和可取消请求，支持大规模子节点
 - Nacos 配置按 50 条翻页，并可跨全部分页模糊搜索 group 或 dataId
 - 延迟读取 value，文本与二进制内容均可无损展示
-- JSON、YAML、XML、Properties/INI、TOML 配置可在代码编辑器中高亮；结构化格式保存前可校验语法
+- JSON、YAML、XML、Properties/INI、TOML 配置使用适配深色背景的高对比亮色语法高亮；结构化格式保存前可校验语法
 - 监听资源变化，并在断线后按协议能力自动恢复
 
 ### 安全变更
