@@ -504,6 +504,29 @@ mod tests {
     }
 
     #[test]
+    fn mse_group_search_http_signature_includes_the_requested_group() {
+        let auth = NacosRequestAuth::MseAccessKey {
+            access_key_id: "LTAI_REDACTED".to_owned(),
+            access_key_secret: Arc::new(ConnectionSecret::new("SECRET_REDACTED")),
+        };
+        let request = auth
+            .apply_for_config_at(
+                reqwest::Client::new().get("http://mse.test/nacos/v1/cs/configs"),
+                "tenant-a",
+                "trip",
+                1_720_000_000_000,
+            )
+            .build()
+            .unwrap();
+
+        assert_eq!(request.headers().get("Timestamp").unwrap(), "1720000000000");
+        assert_eq!(
+            request.headers().get("Spas-Signature").unwrap(),
+            "CXkWiE8ucwXCrbuSJM9IB45sEw8="
+        );
+    }
+
+    #[test]
     fn mse_access_key_profile_configures_the_nacos_clients_for_ram_authentication() {
         let profile = ConnectionProfile {
             id: "mse".to_owned(),

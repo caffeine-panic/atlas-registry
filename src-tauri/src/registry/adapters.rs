@@ -1415,7 +1415,7 @@ async fn fetch_nacos_v2_page(
         .apply_for_config(
             session.http.get(url),
             public_namespace_for_sdk(&session.namespace),
-            "",
+            group,
         )
         .query(&[
             ("search", "blur".to_owned()),
@@ -1449,7 +1449,7 @@ async fn fetch_nacos_v2_page(
     let declared_length = response.content_length();
     let body = response.bytes().await.map_err(|error| {
         RegistryError::invalid_response(format!(
-            "[DEBUG-nacos-v2-body] cannot read response body: {}",
+            "cannot read Nacos 2.x list response body: {}",
             error.without_url()
         ))
     })?;
@@ -1467,14 +1467,14 @@ async fn fetch_nacos_v2_page(
                 generic_error.column()
             ),
         };
-            RegistryError::invalid_response(format!(
-                "[DEBUG-nacos-v2-body] status={status}, contentType={content_type:?}, contentEncoding={content_encoding:?}, declaredLength={declared_length:?}, bytes={}, typed={:?}@{}:{}, generic={generic_shape}",
-                body.len(),
-                error.classify(),
-                error.line(),
-                error.column()
-            ))
-        })
+        RegistryError::invalid_response(format!(
+            "invalid Nacos 2.x list response: status={status}, contentType={content_type:?}, contentEncoding={content_encoding:?}, declaredLength={declared_length:?}, bytes={}, typed={:?}@{}:{}, generic={generic_shape}",
+            body.len(),
+            error.classify(),
+            error.line(),
+            error.column()
+        ))
+    })
 }
 
 fn json_value_kind(value: &serde_json::Value) -> &'static str {
@@ -1504,7 +1504,7 @@ async fn fetch_nacos_v3_page(
         .apply_for_config(
             session.http.get(url),
             public_namespace_for_sdk(&session.namespace),
-            "",
+            group,
         )
         .query(&[
             ("pageNo", page_number.to_string()),

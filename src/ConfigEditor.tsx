@@ -1,10 +1,11 @@
 import {
   bracketMatching,
-  defaultHighlightStyle,
+  HighlightStyle,
   indentOnInput,
   syntaxHighlighting,
   StreamLanguage,
 } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import {
   defaultKeymap,
   history,
@@ -84,6 +85,49 @@ const editorTheme = EditorView.theme(
   { dark: true },
 );
 
+const brightHighlightStyle = HighlightStyle.define([
+  {
+    tag: [tags.keyword, tags.operatorKeyword, tags.controlKeyword],
+    color: "#ff8bd8",
+    fontWeight: "600",
+  },
+  {
+    tag: [
+      tags.propertyName,
+      tags.attributeName,
+      tags.labelName,
+      tags.variableName,
+    ],
+    color: "#63dcff",
+  },
+  {
+    tag: [tags.string, tags.attributeValue],
+    color: "#ffd580",
+  },
+  {
+    tag: [tags.number, tags.bool, tags.null, tags.atom],
+    color: "#c9a7ff",
+  },
+  {
+    tag: [tags.typeName, tags.className, tags.namespace],
+    color: "#78f0bd",
+  },
+  {
+    tag: [tags.comment, tags.lineComment, tags.blockComment],
+    color: "#8fd49b",
+    fontStyle: "italic",
+  },
+  {
+    tag: [tags.operator, tags.punctuation, tags.separator],
+    color: "#b9c9da",
+  },
+  {
+    tag: tags.invalid,
+    color: "#ff9aa5",
+    textDecoration: "underline wavy #ff6b7a",
+  },
+]);
+
 export const ConfigEditor = forwardRef<ConfigEditorHandle, ConfigEditorProps>(
   function ConfigEditor({ value, language, disabled, onChange }, forwardedRef) {
     const host = useRef<HTMLDivElement>(null);
@@ -125,7 +169,7 @@ export const ConfigEditor = forwardRef<ConfigEditorHandle, ConfigEditorProps>(
             indentOnInput(),
             bracketMatching(),
             highlightActiveLine(),
-            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            syntaxHighlighting(brightHighlightStyle, { fallback: true }),
             keymap.of([
               ...defaultKeymap,
               ...historyKeymap,
