@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { planProfileSelection } from "./profileSelection";
 import { useRegistryOperations } from "./useRegistryOperations";
 import { useResourceWorkspace } from "./useResourceWorkspace";
@@ -35,6 +43,8 @@ import {
 } from "./updateSettings";
 import {
   loadPanelLayout,
+  PANEL_WIDTH_LIMITS,
+  resizePanel,
   savePanelLayout,
   togglePanel,
   type PanelId,
@@ -352,6 +362,7 @@ export function App() {
   const [updateProxySettings, setUpdateProxySettings] =
     useState<UpdateProxySettings>(loadUpdateProxySettings);
   const [panelLayout, setPanelLayout] = useState(loadPanelLayout);
+  const [resizingPanel, setResizingPanel] = useState<PanelId>();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<ConnectionDialogMode>("new");
   const [testingConnection, setTestingConnection] = useState(false);
@@ -416,6 +427,15 @@ export function App() {
   const [validationIssue, setValidationIssue] =
     useState<ConfigValidationIssue>();
   const editorRef = useRef<ConfigEditorHandle>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const panelResizeSession = useRef<
+    | {
+        panel: PanelId;
+        pointerId: number;
+        lastClientX: number;
+      }
+    | undefined
+  >(undefined);
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId);
   const selectedSession = selectedId ? sessions[selectedId] : undefined;
@@ -424,6 +444,63 @@ export function App() {
 
   const toggleNavigationPanel = (panel: PanelId) => {
     setPanelLayout((current) => savePanelLayout(togglePanel(current, panel)));
+  };
+
+  const changePanelWidth = (
+    panel: PanelId,
+    delta: number,
+    persist: boolean,
+  ) => {
+    const availableWidth = shellRef.current?.clientWidth ?? window.innerWidth;
+    setPanelLayout((current) => {
+      const resized = resizePanel(current, panel, delta, availableWidth);
+      return persist ? savePanelLayout(resized) : resized;
+    });
+  };
+
+  const startPanelResize = (
+    panel: PanelId,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    panelResizeSession.current = {
+      panel,
+      pointerId: event.pointerId,
+      lastClientX: event.clientX,
+    };
+    setResizingPanel(panel);
+  };
+
+  const movePanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = panelResizeSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    const delta = event.clientX - session.lastClientX;
+    session.lastClientX = event.clientX;
+    if (delta !== 0) changePanelWidth(session.panel, delta, false);
+  };
+
+  const finishPanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = panelResizeSession.current;
+    if (!session || session.pointerId !== event.pointerId) return;
+    panelResizeSession.current = undefined;
+    setResizingPanel(undefined);
+    setPanelLayout((current) => savePanelLayout(current));
+  };
+
+  const resizePanelWithKeyboard = (
+    panel: PanelId,
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    const delta =
+      event.key === "ArrowLeft"
+        ? -16
+        : event.key === "ArrowRight"
+          ? 16
+          : undefined;
+    if (delta === undefined) return;
+    event.preventDefault();
+    changePanelWidth(panel, delta, true);
   };
 
   const detectedLanguage = useMemo(
@@ -2121,8 +2198,16 @@ export function App() {
 
       <div
         className="shell"
+        ref={shellRef}
         data-connections={panelLayout.connections}
         data-resources={panelLayout.resources}
+        data-resizing={resizingPanel ? "true" : undefined}
+        style={
+          {
+            "--connections-width": `${panelLayout.widths.connections}px`,
+            "--resources-width": `${panelLayout.widths.resources}px`,
+          } as CSSProperties
+        }
       >
         <aside className="connections" aria-label="连接">
           <button
@@ -2224,6 +2309,24 @@ export function App() {
               ))}
             </div>
           </div>
+          {connectionsExpanded && (
+            <div
+              className="panel-resizer"
+              role="separator"
+              aria-label="调整连接栏宽度"
+              aria-orientation="vertical"
+              aria-valuemin={PANEL_WIDTH_LIMITS.connections.min}
+              aria-valuenow={panelLayout.widths.connections}
+              tabIndex={0}
+              onPointerDown={(event) => startPanelResize("connections", event)}
+              onPointerMove={movePanelResize}
+              onPointerUp={finishPanelResize}
+              onPointerCancel={finishPanelResize}
+              onKeyDown={(event) =>
+                resizePanelWithKeyboard("connections", event)
+              }
+            />
+          )}
         </aside>
 
         <section className="tree" aria-label="资源">
@@ -2395,6 +2498,10 @@ export function App() {
               const match = currentSearchMatches.get(
                 JSON.stringify(row.node.address),
               );
+              const resourceLabel =
+                match && row.node.address.type === "nacosConfig"
+                  ? `${row.node.address.group} / ${row.node.address.dataId}`
+                  : row.node.name;
               return (
                 <button
                   className={`node ${selected ? "active" : ""}`}
@@ -2412,7 +2519,7 @@ export function App() {
                   <span className={row.node.readable ? "key" : "folder"}>
                     {row.node.readable ? "◇" : "◆"}
                   </span>
-                  <span className="node-name">
+                  <span className="node-name" title={resourceLabel}>
                     {match && row.node.address.type === "nacosConfig" ? (
                       <>
                         {highlightedText(
@@ -2497,6 +2604,22 @@ export function App() {
               </div>
             )}
           </div>
+          {resourcesExpanded && (
+            <div
+              className="panel-resizer"
+              role="separator"
+              aria-label="调整资源栏宽度"
+              aria-orientation="vertical"
+              aria-valuemin={PANEL_WIDTH_LIMITS.resources.min}
+              aria-valuenow={panelLayout.widths.resources}
+              tabIndex={0}
+              onPointerDown={(event) => startPanelResize("resources", event)}
+              onPointerMove={movePanelResize}
+              onPointerUp={finishPanelResize}
+              onPointerCancel={finishPanelResize}
+              onKeyDown={(event) => resizePanelWithKeyboard("resources", event)}
+            />
+          )}
         </section>
 
         <main className="detail">

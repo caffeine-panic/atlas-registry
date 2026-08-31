@@ -206,3 +206,16 @@ test("both navigation panels can be collapsed and restored accessibly", () => {
     /\.shell\[data-resources="collapsed"\]\s*\{[^}]*--resources-width:\s*42px/s,
   );
 });
+
+test("navigation panel dividers expose pointer resizing and persisted widths", () => {
+  assert.match(appSource, /className="panel-resizer"/);
+  assert.match(appSource, /role="separator"/);
+  assert.match(appSource, /onPointerDown=/);
+  assert.match(appSource, /onPointerMove=/);
+  assert.match(appSource, /--resources-width/);
+  assert.match(css, /\.panel-resizer\s*\{[^}]*cursor:\s*col-resize/s);
+});
+
+test("truncated resource names reveal their complete identifier on hover", () => {
+  assert.match(appSource, /className="node-name"\s+title=\{resourceLabel\}/);
+});
