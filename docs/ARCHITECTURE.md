@@ -11,9 +11,12 @@ flowchart LR
     subgraph WebView["WebView (React 19)"]
         UI[组件层<br/>App.tsx / *Dialog.tsx]
         Logic[纯函数状态模块<br/>resourceTree / resourceWorkspaceState / operationTracker]
+        Source[只读工作区数据源<br/>workspaceSource / demoWorkspace]
         IPC[src/registry.ts<br/>类型化 invoke 封装]
         UI --> Logic
-        UI --> IPC
+        UI --> Source
+        UI -- "mutation / watch / settings" --> IPC
+        Source --> IPC
     end
     subgraph Rust["Rust 核心 (src-tauri)"]
         CMD[lib.rs 命令面<br/>generate_handler]
@@ -39,13 +42,16 @@ flowchart LR
 
 ## 前端结构
 
-三层分工，新代码必须遵守：
+四层分工，新代码必须遵守：
 
 1. **纯函数状态模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/nacosPaging.ts`、`src/configLanguage.ts`、`src/configValidation.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React，承载全部可测试的状态转换逻辑；`scripts/*.test.mjs` 直接导入或转译并断言这些模块。
-2. **Hook 组合层**（`src/useResourceWorkspace.ts`、`src/useRegistryOperations.ts`）：把纯函数模块与 IPC 调用、取消、乐观状态接到 React 上。
-3. **组件层**（`src/App.tsx` 与各 `*Dialog.tsx`）：渲染与事件接线，不写业务规则。
+2. **工作区数据源层**（`src/workspaceSource.ts`、`src/demoWorkspace.ts`）：为 profile/session bootstrap、浏览、读取、搜索和原生只读信息提供同一接口。live 实现适配 `registry.ts`，demo 实现只使用内置合成数据，不得导入 registry runtime、访问网络或浏览器存储，也不承载 mutation。
+3. **Hook 组合层**（`src/useResourceWorkspace.ts`、`src/useRegistryOperations.ts`）：把纯函数模块与 IPC 调用、取消、乐观状态接到 React 上。
+4. **组件层**（`src/App.tsx` 与各 `*Dialog.tsx`）：渲染与事件接线，不写业务规则。
 
 `src/registry.ts` 是前端唯一允许出现 `invoke` 的文件。它给每个 Rust 命令一个类型化函数，watch 等流式结果通过 `Channel` 回调。
+
+只读 demo 由标题栏或 `?demo=1` 显式进入。切换时先关闭 live session，再以合成 profile/session 替换工作区；所有写入、监听、导入导出、设置与诊断入口保持关闭。`scripts/demo-workspace.test.mjs` 同时守护数据源隔离、保留域名、分页边界和敏感 sentinel，截图脚本只在 `data-demo-ready="true"` 后捕获画面。
 
 资源正文由 `ConfigEditor.tsx` 中的 CodeMirror 6 编辑器承载。语言识别优先使用实际编码、Nacos `contentType` 和资源标识扩展名；JSON、YAML、XML、TOML 校验只在用户点击校验、保存或创建时执行，失败默认阻止但允许用户明确强制继续。校验不自动格式化正文，也不替代 Rust 侧既有的条件变更、审计和结果不确定处理。
 

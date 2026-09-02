@@ -12,6 +12,10 @@
 
 Atlas Registry is a cross-platform Tauri application with a React interface and a pure Rust core. It connects directly from your workstation—there is no admin server, browser extension, or sidecar to deploy.
 
+![Atlas Registry synthetic demo workspace](docs/assets/atlas-registry-demo.png)
+
+_The screenshot is generated from the built-in read-only demo workspace. All profiles, endpoints, identifiers, metadata, and values are synthetic._
+
 ## Why Atlas Registry
 
 - **One incident, three registries.** Inspect etcd, ZooKeeper, and Nacos from one consistent workspace.
@@ -63,11 +67,14 @@ The suite exercises browsing, guarded mutations, watches, conflicts, and protoco
 
 ## Quick start
 
-1. Create a connection profile and run **Test connection**.
-2. Open the connection and browse resources from the middle panel.
-3. Select a resource to load its value and metadata on demand.
-4. Review the environment, target, expected version, and impact before a mutation.
-5. If Atlas Registry reports an unknown outcome, refresh or verify the server state before taking another action.
+1. Select **Demo** in the title bar to explore etcd, ZooKeeper, and Nacos without a server or saved credentials.
+2. Exit the read-only demo, create a connection profile, and run **Test connection**.
+3. Open the connection and browse resources from the middle panel.
+4. Select a resource to load its value and metadata on demand.
+5. Review the environment, target, expected version, and impact before a mutation.
+6. If Atlas Registry reports an unknown outcome, refresh or verify the server state before taking another action.
+
+The demo workspace is deliberately isolated from Tauri IPC, the network, browser storage, and local connection profiles. It can also be opened deterministically with `?demo=1`, which powers the repository screenshot workflow.
 
 ## Known limitations
 

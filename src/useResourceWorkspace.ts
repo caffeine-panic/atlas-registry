@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useCallback, useReducer } from "react";
 import type { SetStateAction } from "react";
 import type { ResourceAddress, ResourceDocument } from "./registry";
 import type { TreeRow } from "./resourceTree";
@@ -20,25 +20,53 @@ export function useResourceWorkspace() {
     initialResourceWorkspaceState,
   );
 
-  return {
-    state,
-    clearView: () => dispatch({ type: "clearView" }),
-    showDocument: (document?: ResourceDocument) =>
-      dispatch({ type: "document", document }),
-    setRows: (update: SetStateAction<TreeRow[]>) =>
+  const clearView = useCallback(() => dispatch({ type: "clearView" }), []);
+  const showDocument = useCallback(
+    (document?: ResourceDocument) => dispatch({ type: "document", document }),
+    [],
+  );
+  const setRows = useCallback(
+    (update: SetStateAction<TreeRow[]>) =>
       dispatch({
         type: "rows",
         update: (current) => resolve(update, current),
       }),
-    setDraftValue: (value: string) => dispatch({ type: "draft", value }),
-    setSelectedAddress: (address?: ResourceAddress) =>
-      dispatch({ type: "address", address }),
-    setFilter: (value: string) => dispatch({ type: "filter", value }),
-    setResourceQuery: (value: string) => dispatch({ type: "query", value }),
-    setActiveSearch: (update: SetStateAction<ActiveSearch | undefined>) =>
+    [],
+  );
+  const setDraftValue = useCallback(
+    (value: string) => dispatch({ type: "draft", value }),
+    [],
+  );
+  const setSelectedAddress = useCallback(
+    (address?: ResourceAddress) => dispatch({ type: "address", address }),
+    [],
+  );
+  const setFilter = useCallback(
+    (value: string) => dispatch({ type: "filter", value }),
+    [],
+  );
+  const setResourceQuery = useCallback(
+    (value: string) => dispatch({ type: "query", value }),
+    [],
+  );
+  const setActiveSearch = useCallback(
+    (update: SetStateAction<ActiveSearch | undefined>) =>
       dispatch({
         type: "search",
         update: (current) => resolve(update, current),
       }),
+    [],
+  );
+
+  return {
+    state,
+    clearView,
+    showDocument,
+    setRows,
+    setDraftValue,
+    setSelectedAddress,
+    setFilter,
+    setResourceQuery,
+    setActiveSearch,
   };
 }
