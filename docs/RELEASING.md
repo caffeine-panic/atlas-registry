@@ -6,7 +6,7 @@
 
 ## 应用内更新签名
 
-`0.2.0` 是首个包含应用内更新入口的版本，早于它的安装包仍需手动升级一次。客户端只访问 `https://github.com/caffeine-panic/oneaday/releases/latest/download/latest.json`，下载由 Rust updater 完成，WebView 不直接访问 GitHub。
+`0.2.0` 是首个包含应用内更新入口的版本，早于它的安装包仍需手动升级一次。客户端只访问 `https://github.com/caffeine-panic/atlas-registry/releases/latest/download/latest.json`，下载由 Rust updater 完成，WebView 不直接访问 GitHub。
 
 Tauri 更新签名不可关闭。公钥已嵌入 `src-tauri/tauri.conf.json`；私钥不得进入仓库，当前本机备份位于 `~/.tauri/atlas-registry.key`，密码保存在 macOS Keychain service `dev.oneaday.atlas-registry.updater`。GitHub Actions 分别使用仓库 Secret `TAURI_SIGNING_PRIVATE_KEY` 与 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。私钥或密码丢失后，现有客户端将无法信任新密钥签出的更新，二者都必须长期离线备份。
 

@@ -11,7 +11,7 @@ test("desktop updater is signed and served by the repository release channel", (
 
   assert.equal(config.bundle?.createUpdaterArtifacts, true);
   assert.deepEqual(updater?.endpoints, [
-    "https://github.com/caffeine-panic/oneaday/releases/latest/download/latest.json",
+    "https://github.com/caffeine-panic/atlas-registry/releases/latest/download/latest.json",
   ]);
   assert.ok(
     typeof updater?.pubkey === "string" &&
