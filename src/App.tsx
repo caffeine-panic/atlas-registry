@@ -63,6 +63,7 @@ import { NacosHistoryDialog } from "./NacosHistoryDialog";
 import { NacosNativeDialog } from "./NacosNativeDialog";
 import { NativeInfoDialog } from "./NativeInfoDialog";
 import { SafeChangeDialog } from "./SafeChangeDialog";
+import { ResourceCompareDialog } from "./ResourceCompareDialog";
 import { ProductionLockBanner } from "./ProductionLockBanner";
 import {
   effectiveProductionLock,
@@ -122,6 +123,7 @@ import {
   type NativeResourceInfo,
   type ProductionLockStatus,
   type ResourceAddress,
+  type ResourceDocument,
   type ResourceHistoryDocument,
   type ResourceHistoryEntry,
   type ResourceMutation,
@@ -133,6 +135,15 @@ import {
   type ZookeeperNativeAction,
 } from "./registry";
 import {
+  addressMatchesAdapter,
+  classifyComparisonError,
+  compareResourceDocuments,
+  compatibleSourceProfiles,
+  isComparableComparison,
+  staleComparison,
+  type ResourceComparison,
+} from "./resourceCompare";
+import {
   searchForWorkspaceMode,
   workspaceModeFromSearch,
   type WorkspaceMode,
@@ -142,6 +153,7 @@ import {
   applySafeChange,
   buildSafeChangeReceipt,
   createSafeChangePlan,
+  createSafeChangePlanFromValue,
   failedSafeChangeOutcome,
   initialSafeChangeState,
   preflightConflictOutcome,
@@ -405,6 +417,13 @@ export function App() {
   const [safeChange, setSafeChange] = useState<SafeChangeState>();
   const [safeChangeConfirmation, setSafeChangeConfirmation] = useState("");
   const [safeChangeReceiptCopied, setSafeChangeReceiptCopied] = useState(false);
+  const [compareContext, setCompareContext] = useState<{
+    targetProfile: ConnectionProfile;
+    targetDocument: ResourceDocument;
+  }>();
+  const [compareSourceId, setCompareSourceId] = useState("");
+  const [resourceComparison, setResourceComparison] =
+    useState<ResourceComparison>();
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportIncludeValue, setExportIncludeValue] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview>();
@@ -499,6 +518,17 @@ export function App() {
           remainingSeconds: null,
         })
       : undefined;
+  const compareSources = useMemo(
+    () =>
+      compareContext
+        ? compatibleSourceProfiles(
+            profiles,
+            new Set(Object.keys(sessions)),
+            compareContext.targetProfile,
+          )
+        : [],
+    [compareContext, profiles, sessions],
+  );
   const connectionsExpanded = panelLayout.connections === "expanded";
   const resourcesExpanded = panelLayout.resources === "expanded";
 
@@ -638,6 +668,8 @@ export function App() {
     setProfiles([]);
     setSessions({});
     setSelectedId(undefined);
+    setCompareContext(undefined);
+    setResourceComparison(undefined);
     clearView();
     setNacosPageNumber(1);
     setNacosTotalPages(1);
@@ -1608,6 +1640,127 @@ export function App() {
     }
   };
 
+  const openResourceComparison = () => {
+    if (!selectedProfile || !selectedSession || !document || busy) return;
+    if (!addressMatchesAdapter(selectedProfile.adapter, document.address)) {
+      showErrorText("只有协议内的精确资源地址可以跨环境比较");
+      return;
+    }
+    const sources = compatibleSourceProfiles(
+      profiles,
+      new Set(Object.keys(sessions)),
+      selectedProfile,
+    );
+    setCompareContext({
+      targetProfile: selectedProfile,
+      targetDocument: document,
+    });
+    setCompareSourceId(sources[0]?.id ?? "");
+    setResourceComparison(undefined);
+  };
+
+  const compareExactResource = async () => {
+    if (!compareContext || !compareSourceId || busy) return;
+    const source = compareSources.find(
+      (profile) => profile.id === compareSourceId,
+    );
+    if (!source) return;
+    setBusy(true);
+    clearToast();
+    let sourceDocument: ResourceDocument;
+    try {
+      sourceDocument = await runRead(
+        source.id,
+        compareContext.targetDocument.address,
+      );
+    } catch (reason) {
+      setResourceComparison(classifyComparisonError(reason, "source"));
+      setBusy(false);
+      return;
+    }
+    try {
+      const targetDocument = await runRead(
+        compareContext.targetProfile.id,
+        compareContext.targetDocument.address,
+      );
+      setCompareContext((current) =>
+        current ? { ...current, targetDocument } : current,
+      );
+      setResourceComparison(
+        compareResourceDocuments(sourceDocument, targetDocument),
+      );
+    } catch (reason) {
+      setResourceComparison(classifyComparisonError(reason, "target"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const promoteComparedResource = async () => {
+    if (
+      !compareContext ||
+      !compareSourceId ||
+      !isComparableComparison(resourceComparison) ||
+      busy ||
+      !writeAllowed
+    )
+      return;
+    const source = compareSources.find(
+      (profile) => profile.id === compareSourceId,
+    );
+    if (!source) return;
+    setBusy(true);
+    clearToast();
+    let refreshedSource: ResourceDocument;
+    try {
+      refreshedSource = await runRead(
+        source.id,
+        compareContext.targetDocument.address,
+      );
+    } catch (reason) {
+      setResourceComparison(classifyComparisonError(reason, "source"));
+      setBusy(false);
+      return;
+    }
+    try {
+      const refreshedTarget = await runRead(
+        compareContext.targetProfile.id,
+        compareContext.targetDocument.address,
+      );
+      const stale = staleComparison(
+        resourceComparison,
+        refreshedSource,
+        refreshedTarget,
+      );
+      if (stale) {
+        setResourceComparison(stale);
+        setCompareContext((current) =>
+          current ? { ...current, targetDocument: refreshedTarget } : current,
+        );
+        return;
+      }
+      setSafeChange(
+        initialSafeChangeState(
+          createSafeChangePlanFromValue(
+            compareContext.targetProfile,
+            refreshedTarget,
+            refreshedSource.value,
+            newConnectionId(),
+            refreshedSource.contentType,
+          ),
+        ),
+      );
+      setSafeChangeConfirmation("");
+      setSafeChangeReceiptCopied(false);
+      setCompareContext(undefined);
+      setResourceComparison(undefined);
+    } catch (reason) {
+      setResourceComparison(classifyComparisonError(reason, "target"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runSafeChangePreflight = async () => {
     if (!safeChange || busy) return;
     const plan = safeChange.plan;
@@ -2392,6 +2545,8 @@ export function App() {
     setPendingZookeeperAction(undefined);
     setNacosNativeOpen(false);
     setCreateDialogOpen(false);
+    setCompareContext(undefined);
+    setResourceComparison(undefined);
     showSuccess("连接已断开");
   };
 
@@ -3110,6 +3265,13 @@ export function App() {
                     导出
                   </button>
                   <button
+                    className="button"
+                    disabled={busy}
+                    onClick={openResourceComparison}
+                  >
+                    比较 / 提升
+                  </button>
+                  <button
                     className="button danger"
                     disabled={
                       demoMode || busy || !document.version || !writeAllowed
@@ -3317,6 +3479,32 @@ export function App() {
           onChange={setResourceDraft}
           onCancel={() => setCreateDialogOpen(false)}
           onContinue={prepareCreate}
+        />
+      )}
+
+      {compareContext && (
+        <ResourceCompareDialog
+          targetProfile={compareContext.targetProfile}
+          targetDocument={compareContext.targetDocument}
+          sources={compareSources}
+          sourceId={compareSourceId}
+          comparison={resourceComparison}
+          busy={busy}
+          writeAllowed={!demoMode && writeAllowed}
+          writeBlockedReason={
+            demoMode ? "演示工作区只读，只能比较，不能提升资源。" : undefined
+          }
+          onSourceChange={(sourceId) => {
+            setCompareSourceId(sourceId);
+            setResourceComparison(undefined);
+          }}
+          onCompare={() => void compareExactResource()}
+          onPromote={() => void promoteComparedResource()}
+          onCancelOperation={() => void cancelActiveOperation()}
+          onClose={() => {
+            setCompareContext(undefined);
+            setResourceComparison(undefined);
+          }}
         />
       )}
 

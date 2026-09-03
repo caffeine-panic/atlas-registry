@@ -57,6 +57,22 @@ test("plans identify all protocol tokens without retaining endpoints", () => {
   }
 });
 
+test("promotion plans preserve the source encoding and content type", () => {
+  const target = etcdDocument();
+  const plan = safeChange.createSafeChangePlanFromValue(
+    profiles.etcd,
+    target,
+    { content: "AP8=", encoding: "base64", sizeBytes: 2 },
+    "binary-promotion",
+    "application/octet-stream",
+  );
+  assert.deepEqual(plan.after.value, {
+    content: "AP8=",
+    encoding: "base64",
+  });
+  assert.equal(plan.after.contentType, "application/octet-stream");
+});
+
 test("the structured diff is deterministic and bounded", () => {
   const diff = safeChange.buildBoundedSafeChangeDiff(
     "service: payments\ntimeout: 1000\nretries: 2",

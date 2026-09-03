@@ -1229,6 +1229,98 @@ html[data-platform="macos"] .topbar {
   max-height: calc(100vh - 48px);
   overflow: auto;
 }
+.resource-compare-dialog {
+  width: min(960px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+.compare-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+}
+.compare-route > div {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid #2b3b50;
+  border-radius: 10px;
+  background: #0d151f;
+}
+.compare-route span,
+.compare-route small {
+  color: #8394a9;
+  font-size: 11px;
+}
+.compare-route b {
+  color: #d7e2ee;
+}
+.compare-arrow {
+  display: grid;
+  place-items: center;
+  color: #55d6be !important;
+  font-size: 20px !important;
+}
+.compare-target {
+  grid-template-columns: 110px minmax(0, 1fr);
+  margin-top: 14px;
+}
+.compare-result {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #314057;
+  border-radius: 10px;
+  color: #a9b7c8;
+  background: #101a27;
+}
+.compare-result.equal {
+  border-color: #285d50;
+  background: #10231f;
+}
+.compare-result.different,
+.compare-result.binary.different,
+.compare-result.stale {
+  border-color: #725b34;
+  background: #1b1812;
+}
+.compare-result.missing,
+.compare-result.oversized,
+.compare-result.unauthorized,
+.compare-result.failed {
+  border-color: #713b46;
+  background: #25151a;
+}
+.compare-result b {
+  color: #d7e2ee;
+}
+.compare-result small {
+  color: #8394a9;
+}
+.compare-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.compare-result-heading span {
+  display: flex;
+  gap: 8px;
+  font: 700 11px/1 monospace;
+}
+.compare-result-heading i {
+  color: #7fe9d3;
+  font-style: normal;
+}
+.compare-result-heading em {
+  color: #ff9ca5;
+  font-style: normal;
+}
+.compare-diff {
+  max-height: min(330px, calc(100vh - 430px));
+}
 .safe-change-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.75fr);

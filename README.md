@@ -22,6 +22,7 @@ _The screenshot is generated from the built-in read-only demo workspace. All pro
 - **Native semantics, not lowest-common-denominator CRUD.** Use leases and transactions, ACLs and ephemeral nodes, namespaces and services.
 - **Safe Change Center, not a save button.** Existing-resource updates show a bounded before/after diff, authoritative preflight, protocol concurrency token, explicit confirmation, conditional apply, authoritative readback, and a redacted review receipt.
 - **Production is read-only by default.** Production profiles require an audited, session-only 5–60 minute write window; expiry, disconnect, or app restart immediately restores the lock.
+- **Compare environments before promoting.** Read one exact resource from another open connection, distinguish text/binary and failure states, then refresh both sides before handing the target token and source bytes to Safe Change Center.
 - **Secrets and values stay contained.** Credentials live in the operating system keychain; audit records, watch events, errors, and diagnostics exclude values and tokens, while exports omit values by default.
 
 ## Install
