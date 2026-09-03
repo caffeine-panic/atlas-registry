@@ -12,11 +12,11 @@ use registry::{
     EtcdLeaseAction, EtcdLeaseActionResult, EtcdTransaction, EtcdTransactionResult, MutationResult,
     NacosInstance, NacosNamespace, NacosNativeAction, NacosNativeActionResult,
     NacosNativeOperation, NacosService, NacosServicePage, NativeResourceInfo, OperationId,
-    RegistryCatalog, RegistryError, RegistryService, ResourceAddress, ResourceDocument,
-    ResourceHistoryDocument, ResourceHistoryPage, ResourceHistoryRequest, ResourceMutation,
-    ResourcePage, ResourcePageRequest, ResourceSearchPage, ResourceSearchRequest, ResourceSnapshot,
-    SubscriptionId, WatchEvent, WatchRequest, ZookeeperCreateMode, ZookeeperNativeAction,
-    ZookeeperNativeActionResult,
+    ProductionLockStatus, RegistryCatalog, RegistryError, RegistryService, ResourceAddress,
+    ResourceDocument, ResourceHistoryDocument, ResourceHistoryPage, ResourceHistoryRequest,
+    ResourceMutation, ResourcePage, ResourcePageRequest, ResourceSearchPage, ResourceSearchRequest,
+    ResourceSnapshot, SubscriptionId, WatchEvent, WatchRequest, ZookeeperCreateMode,
+    ZookeeperNativeAction, ZookeeperNativeActionResult,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State, ipc::Channel};
@@ -177,6 +177,95 @@ async fn close_connection(
     connection_id: String,
 ) -> Result<(), RegistryError> {
     service.close(&connection_id).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductionLockStatusRequest {
+    connection_id: String,
+}
+
+#[tauri::command]
+async fn get_production_lock_status(
+    service: State<'_, RegistryService>,
+    request: ProductionLockStatusRequest,
+) -> Result<ProductionLockStatus, RegistryError> {
+    service.production_lock_status(&request.connection_id).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UnlockProductionConnectionRequest {
+    connection_id: String,
+    operation_id: String,
+    confirmation: String,
+    duration_seconds: u64,
+}
+
+#[tauri::command]
+async fn unlock_production_connection<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    service: State<'_, RegistryService>,
+    audit: State<'_, audit::AuditLog>,
+    request: UnlockProductionConnectionRequest,
+) -> Result<ProductionLockStatus, RegistryError> {
+    OperationId::new(request.operation_id.clone())?;
+    service
+        .validate_production_unlock(
+            &request.connection_id,
+            &request.confirmation,
+            request.duration_seconds,
+        )
+        .await?;
+    let directory = app_config_directory(&app)?;
+    audit
+        .record_production_unlocked_in(
+            &directory,
+            &request.connection_id,
+            &request.operation_id,
+            request.duration_seconds,
+        )
+        .await
+        .map_err(|_| {
+            RegistryError::audit_incomplete(
+                "production write window stayed closed because the unlock audit could not be persisted",
+            )
+        })?;
+    service
+        .unlock_production(
+            &request.connection_id,
+            &request.confirmation,
+            request.duration_seconds,
+        )
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LockProductionConnectionRequest {
+    connection_id: String,
+    operation_id: String,
+}
+
+#[tauri::command]
+async fn lock_production_connection<R: tauri::Runtime>(
+    app: AppHandle<R>,
+    service: State<'_, RegistryService>,
+    audit: State<'_, audit::AuditLog>,
+    request: LockProductionConnectionRequest,
+) -> Result<ProductionLockStatus, RegistryError> {
+    OperationId::new(request.operation_id.clone())?;
+    let status = service.lock_production(&request.connection_id).await?;
+    let directory = app_config_directory(&app)?;
+    audit
+        .record_production_locked_in(&directory, &request.connection_id, &request.operation_id)
+        .await
+        .map_err(|_| {
+            RegistryError::audit_incomplete(
+                "production connection is locked, but the lock audit could not be persisted",
+            )
+        })?;
+    Ok(status)
 }
 
 #[derive(Deserialize)]
@@ -1536,6 +1625,9 @@ fn configured_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::B
             delete_connection_profile,
             open_connection,
             close_connection,
+            get_production_lock_status,
+            unlock_production_connection,
+            lock_production_connection,
             list_resources,
             read_resource,
             search_resources,
@@ -1680,6 +1772,48 @@ mod command_tests {
         )
         .expect_err("root native inspection should be rejected before session lookup");
         assert_eq!(native_info_error["code"], "unsupported");
+
+        let lock_status_error = test::get_ipc_response(
+            &webview,
+            request(
+                "get_production_lock_status",
+                json!({ "request": { "connectionId": "missing" } }),
+            ),
+        )
+        .expect_err("production lock status command should be registered");
+        assert_eq!(lock_status_error["code"], "notConnected");
+
+        let unlock_error = test::get_ipc_response(
+            &webview,
+            request(
+                "unlock_production_connection",
+                json!({
+                    "request": {
+                        "connectionId": "missing",
+                        "operationId": "unlock-operation",
+                        "confirmation": "Production",
+                        "durationSeconds": 300
+                    }
+                }),
+            ),
+        )
+        .expect_err("production unlock command should be registered");
+        assert_eq!(unlock_error["code"], "notConnected");
+
+        let lock_error = test::get_ipc_response(
+            &webview,
+            request(
+                "lock_production_connection",
+                json!({
+                    "request": {
+                        "connectionId": "missing",
+                        "operationId": "lock-operation"
+                    }
+                }),
+            ),
+        )
+        .expect_err("production lock command should be registered");
+        assert_eq!(lock_error["code"], "notConnected");
 
         let import_error = test::get_ipc_response(
             &webview,

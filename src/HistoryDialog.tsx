@@ -21,6 +21,8 @@ const kindLabels: Record<AuditHistoryItem["kind"], string> = {
   applied: "已应用",
   failed: "失败",
   outcomeUnknown: "结果未知",
+  productionUnlocked: "生产写入已解锁",
+  productionLocked: "生产写入已锁定",
 };
 
 const operationLabels = {
@@ -115,7 +117,10 @@ export function HistoryDialog({
                     ? operationLabels[item.operation]
                     : item.nativeOperation
                       ? nativeOperationLabels[item.nativeOperation]
-                      : "写入流程"}
+                      : item.kind === "productionUnlocked" ||
+                          item.kind === "productionLocked"
+                        ? "生产保护"
+                        : "写入流程"}
                 </b>
                 <time>
                   {new Date(item.timestampMs).toLocaleString("zh-CN")}
@@ -142,6 +147,9 @@ export function HistoryDialog({
                   </span>
                 )}
                 {item.errorCode && <span>错误 {item.errorCode}</span>}
+                {item.durationSeconds && (
+                  <span>解锁时长 {item.durationSeconds / 60} 分钟</span>
+                )}
                 {snapshotText(item.previous, "变更前")}
                 {snapshotText(item.current, "变更后")}
               </div>

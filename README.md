@@ -21,6 +21,7 @@ _The screenshot is generated from the built-in read-only demo workspace. All pro
 - **One incident, three registries.** Inspect etcd, ZooKeeper, and Nacos from one consistent workspace.
 - **Native semantics, not lowest-common-denominator CRUD.** Use leases and transactions, ACLs and ephemeral nodes, namespaces and services.
 - **Safe Change Center, not a save button.** Existing-resource updates show a bounded before/after diff, authoritative preflight, protocol concurrency token, explicit confirmation, conditional apply, authoritative readback, and a redacted review receipt.
+- **Production is read-only by default.** Production profiles require an audited, session-only 5–60 minute write window; expiry, disconnect, or app restart immediately restores the lock.
 - **Secrets and values stay contained.** Credentials live in the operating system keychain; audit records, watch events, errors, and diagnostics exclude values and tokens, while exports omit values by default.
 
 ## Install
@@ -48,6 +49,7 @@ The application can check for updates from the title bar. Update artifacts are v
 | Risk                                              | Atlas Registry behavior                                                                                                           |
 | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | A teammate changed the same resource              | Safe Change Center preflight plus etcd revision, ZooKeeper version/aversion, and Nacos MD5/fingerprint checks reject stale writes |
+| A production connection is opened                 | Starts read-only; all generic and protocol-native mutations are rejected until a bounded write window is explicitly unlocked      |
 | The network failed after submission               | Reports an explicit `mutationOutcomeUnknown`; never performs a blind automatic retry                                              |
 | The remote write succeeded but local audit failed | Reports `auditIncomplete` separately from remote uncertainty                                                                      |
 | A diagnostic or audit record is shared            | Stores identifiers, versions, sizes, encodings, and hashes—not resource values, passwords, or tokens                              |

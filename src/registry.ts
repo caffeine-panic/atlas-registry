@@ -13,6 +13,7 @@ export type { ConnectionEnvironment } from "./generated/ConnectionEnvironment";
 export type { ConnectionProfile } from "./generated/ConnectionProfile";
 export type { NacosApiVersion } from "./generated/NacosApiVersion";
 export type { NacosNativeAction } from "./generated/NacosNativeAction";
+export type { ProductionLockStatus } from "./generated/ProductionLockStatus";
 export type { ResourceAddress } from "./generated/ResourceAddress";
 export type { ResourceNode } from "./generated/ResourceNode";
 export type { ResourcePage } from "./generated/ResourcePage";
@@ -26,6 +27,7 @@ import type { AdapterId } from "./generated/AdapterId";
 import type { ConnectionEnvironment } from "./generated/ConnectionEnvironment";
 import type { ConnectionProfile } from "./generated/ConnectionProfile";
 import type { NacosNativeAction } from "./generated/NacosNativeAction";
+import type { ProductionLockStatus } from "./generated/ProductionLockStatus";
 import type { ResourceAddress } from "./generated/ResourceAddress";
 import type { ResourcePage } from "./generated/ResourcePage";
 import type { ResourceSearchPage } from "./generated/ResourceSearchPage";
@@ -413,7 +415,9 @@ export type AuditHistoryKind =
   | "started"
   | "applied"
   | "failed"
-  | "outcomeUnknown";
+  | "outcomeUnknown"
+  | "productionUnlocked"
+  | "productionLocked";
 
 export type AuditHistoryItem = {
   kind: AuditHistoryKind;
@@ -447,6 +451,7 @@ export type AuditHistoryItem = {
   current?: ResourceSnapshot;
   consistency?: "atomic" | "checkedBeforeMutation";
   errorCode?: string;
+  durationSeconds?: number;
 };
 
 export type AuditHistoryPage = {
@@ -529,6 +534,32 @@ export function openConnection(
 
 export function closeConnection(connectionId: string) {
   return invoke<void>("close_connection", { connectionId });
+}
+
+export function getProductionLockStatus(connectionId: string) {
+  return invoke<ProductionLockStatus>("get_production_lock_status", {
+    request: { connectionId },
+  });
+}
+
+export function unlockProductionConnection(
+  connectionId: string,
+  confirmation: string,
+  durationSeconds: number,
+  operationId: string,
+) {
+  return invoke<ProductionLockStatus>("unlock_production_connection", {
+    request: { connectionId, confirmation, durationSeconds, operationId },
+  });
+}
+
+export function lockProductionConnection(
+  connectionId: string,
+  operationId: string,
+) {
+  return invoke<ProductionLockStatus>("lock_production_connection", {
+    request: { connectionId, operationId },
+  });
 }
 
 export function listResources(
