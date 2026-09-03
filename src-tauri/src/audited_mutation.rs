@@ -17,6 +17,7 @@ where
     Run: FnOnce(MutationPhase) -> RunFuture,
     RunFuture: Future<Output = Result<T, RegistryError>>,
 {
+    service.ensure_mutation_allowed(connection_id).await?;
     let registered_operation_id = OperationId::new(operation_id.to_owned())?;
     let phase = MutationPhase::default();
     let workflow_phase = phase.clone();

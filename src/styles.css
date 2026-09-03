@@ -188,6 +188,56 @@ html[data-platform="macos"] .topbar {
   height: calc(100vh - 58px);
   transition: grid-template-columns 150ms ease;
 }
+.app[data-production-lock="visible"] .shell {
+  height: calc(100vh - 112px);
+}
+.production-lock-banner {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 20px;
+  border-bottom: 1px solid #815041;
+  background: #261a18;
+}
+.production-lock-banner.unlocked {
+  border-color: #a3742f;
+  background: #2a2113;
+}
+.production-lock-banner > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.production-lock-banner b {
+  flex: none;
+  color: #ffb7a5;
+}
+.production-lock-banner.unlocked b {
+  color: #ffd27a;
+}
+.production-lock-banner span {
+  overflow: hidden;
+  color: #c9b7b2;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.production-lock-banner.unlocked span {
+  color: #dac9a6;
+}
+.production-unlock-dialog {
+  width: min(520px, calc(100vw - 48px));
+}
+.production-unlock-dialog > label:not(.production-confirmation) {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  color: #aebdcb;
+  font-size: 13px;
+}
 .shell[data-connections="collapsed"] {
   --connections-width: 42px;
 }

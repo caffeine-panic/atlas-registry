@@ -63,6 +63,11 @@ import { NacosHistoryDialog } from "./NacosHistoryDialog";
 import { NacosNativeDialog } from "./NacosNativeDialog";
 import { NativeInfoDialog } from "./NativeInfoDialog";
 import { SafeChangeDialog } from "./SafeChangeDialog";
+import { ProductionLockBanner } from "./ProductionLockBanner";
+import {
+  effectiveProductionLock,
+  productionWriteAllowed,
+} from "./productionLock";
 import { EtcdLeaseDialog } from "./EtcdLeaseDialog";
 import {
   ZookeeperAclDialog,
@@ -87,12 +92,14 @@ import {
   executeZookeeperNativeAction,
   exportDiagnosticBundle,
   exportResource,
+  getProductionLockStatus,
   installAppUpdate,
   isCancelled,
   isNotFound,
   isOutcomeUnknown,
   listResourceHistory,
   loadAuditHistory,
+  lockProductionConnection,
   newConnectionId,
   mutateResource,
   mutationFailureRecovery,
@@ -100,6 +107,7 @@ import {
   readResourceHistory,
   startWatch,
   stopWatch,
+  unlockProductionConnection,
   upsertConnectionProfile,
   type AdapterDescriptor,
   type AdapterId,
@@ -112,6 +120,7 @@ import {
   type EtcdTransaction,
   type ImportPreview,
   type NativeResourceInfo,
+  type ProductionLockStatus,
   type ResourceAddress,
   type ResourceHistoryDocument,
   type ResourceHistoryEntry,
@@ -428,6 +437,10 @@ export function App() {
     useState<Extract<ZookeeperNativeAction, { action: "create" }>>();
   const [zookeeperConfirmation, setZookeeperConfirmation] = useState("");
   const [nacosNativeOpen, setNacosNativeOpen] = useState(false);
+  const [productionLockStatus, setProductionLockStatus] =
+    useState<ProductionLockStatus>();
+  const [productionLockBusy, setProductionLockBusy] = useState(false);
+  const [clockNowMs, setClockNowMs] = useState(() => Date.now());
   const [resourceWatch, setResourceWatch] = useState<ResourceWatchView>();
   const watchHandle = useRef<WatchHandle | undefined>(undefined);
   const watchGeneration = useRef(0);
@@ -461,6 +474,31 @@ export function App() {
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedId);
   const selectedSession = selectedId ? sessions[selectedId] : undefined;
+  const selectedSessionId = selectedSession?.id;
+  const productionProfile = selectedProfile?.environment === "production";
+  const selectedProductionLockStatus =
+    productionLockStatus?.connectionId === selectedSessionId
+      ? productionLockStatus
+      : undefined;
+  const effectiveLockStatus = useMemo(
+    () => effectiveProductionLock(selectedProductionLockStatus, clockNowMs),
+    [clockNowMs, selectedProductionLockStatus],
+  );
+  const writeAllowed = productionWriteAllowed(
+    productionProfile,
+    selectedProductionLockStatus,
+    clockNowMs,
+  );
+  const displayedLockStatus: ProductionLockStatus | undefined =
+    productionProfile && selectedSession
+      ? (effectiveLockStatus ?? {
+          connectionId: selectedSession.id,
+          production: true,
+          locked: true,
+          unlockedUntilMs: null,
+          remainingSeconds: null,
+        })
+      : undefined;
   const connectionsExpanded = panelLayout.connections === "expanded";
   const resourcesExpanded = panelLayout.resources === "expanded";
 
@@ -550,6 +588,49 @@ export function App() {
     setEditorLanguageOverride(undefined);
     setValidationIssue(undefined);
   }, [document?.address, document?.version]);
+
+  useEffect(() => {
+    if (!productionProfile || !selectedSessionId || demoMode) {
+      setProductionLockStatus(undefined);
+      return;
+    }
+    let current = true;
+    getProductionLockStatus(selectedSessionId)
+      .then((status) => {
+        if (current) setProductionLockStatus(status);
+      })
+      .catch((reason: unknown) => {
+        if (!current) return;
+        setProductionLockStatus(undefined);
+        setToast((toast) => nextToast(toast, errorMessage(reason), "error"));
+      });
+    return () => {
+      current = false;
+    };
+  }, [demoMode, productionProfile, selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedProductionLockStatus || selectedProductionLockStatus.locked)
+      return;
+    const timer = globalThis.setInterval(
+      () => setClockNowMs(Date.now()),
+      1_000,
+    );
+    return () => globalThis.clearInterval(timer);
+  }, [selectedProductionLockStatus]);
+
+  useEffect(() => {
+    if (writeAllowed) return;
+    setCreateDialogOpen(false);
+    setPendingMutation(undefined);
+    setSafeChange(undefined);
+    setImportPreview(undefined);
+    setEtcdTransactionOpen(false);
+    setPendingZookeeperAction(undefined);
+    setNacosNativeOpen(false);
+    setNativeInfoOpen(false);
+    setNativeInfo(undefined);
+  }, [writeAllowed]);
 
   useEffect(() => {
     let current = true;
@@ -1577,6 +1658,7 @@ export function App() {
 
   const executeSafeChange = async () => {
     if (
+      !writeAllowed ||
       !safeChange ||
       safeChange.phase !== "ready" ||
       safeChange.preflight?.kind !== "ready" ||
@@ -1662,7 +1744,7 @@ export function App() {
   };
 
   const executeMutation = async () => {
-    if (!selectedSession || !pendingMutation || busy) return;
+    if (!selectedSession || !pendingMutation || busy || !writeAllowed) return;
     const mutation = pendingMutation;
     setBusy(true);
     clearToast();
@@ -1803,7 +1885,7 @@ export function App() {
   };
 
   const executeImport = async () => {
-    if (!selectedSession || !importPreview || busy) return;
+    if (!selectedSession || !importPreview || busy || !writeAllowed) return;
     const preview = importPreview;
     setBusy(true);
     clearToast();
@@ -2016,7 +2098,13 @@ export function App() {
   };
 
   const executeLeaseAction = async (action: EtcdLeaseAction) => {
-    if (!selectedSession || selectedProfile?.adapter !== "etcd" || busy) return;
+    if (
+      !selectedSession ||
+      selectedProfile?.adapter !== "etcd" ||
+      busy ||
+      !writeAllowed
+    )
+      return;
     setBusy(true);
     clearToast();
     const operationId = startOperation();
@@ -2102,7 +2190,12 @@ export function App() {
   };
 
   const executeZookeeperAction = async (action: ZookeeperNativeAction) => {
-    if (!selectedSession || selectedProfile?.adapter !== "zookeeper" || busy)
+    if (
+      !selectedSession ||
+      selectedProfile?.adapter !== "zookeeper" ||
+      busy ||
+      !writeAllowed
+    )
       return;
     setBusy(true);
     clearToast();
@@ -2177,7 +2270,13 @@ export function App() {
   };
 
   const executeTransaction = async () => {
-    if (!selectedSession || selectedProfile?.adapter !== "etcd" || busy) return;
+    if (
+      !selectedSession ||
+      selectedProfile?.adapter !== "etcd" ||
+      busy ||
+      !writeAllowed
+    )
+      return;
     let transaction: EtcdTransaction;
     try {
       const seen = new Set<string>();
@@ -2296,6 +2395,51 @@ export function App() {
     showSuccess("连接已断开");
   };
 
+  const unlockProduction = async (
+    confirmation: string,
+    durationSeconds: number,
+  ) => {
+    if (!selectedSession || !productionProfile || productionLockBusy) return;
+    setProductionLockBusy(true);
+    clearToast();
+    try {
+      const status = await unlockProductionConnection(
+        selectedSession.id,
+        confirmation,
+        durationSeconds,
+        newConnectionId(),
+      );
+      setClockNowMs(Date.now());
+      setProductionLockStatus(status);
+      showWarning(
+        `生产写入已限时解锁 ${durationSeconds / 60} 分钟；到期自动恢复只读`,
+      );
+    } catch (reason) {
+      showError(reason);
+      throw reason;
+    } finally {
+      setProductionLockBusy(false);
+    }
+  };
+
+  const lockProduction = async () => {
+    if (!selectedSession || !productionProfile || productionLockBusy) return;
+    setProductionLockBusy(true);
+    clearToast();
+    try {
+      const status = await lockProductionConnection(
+        selectedSession.id,
+        newConnectionId(),
+      );
+      setProductionLockStatus(status);
+      showSuccess("生产连接已恢复只读");
+    } catch (reason) {
+      showError(reason);
+    } finally {
+      setProductionLockBusy(false);
+    }
+  };
+
   const openNewConnection = () => {
     setDialogMode("new");
     setForm(emptyForm());
@@ -2389,6 +2533,7 @@ export function App() {
       className="app"
       data-workspace-mode={workspaceMode}
       data-demo-ready={demoReady ? "true" : undefined}
+      data-production-lock={displayedLockStatus ? "visible" : undefined}
     >
       <header className="topbar" data-tauri-drag-region="deep">
         <div className="brand">
@@ -2456,6 +2601,17 @@ export function App() {
           </>
         )}
       </header>
+
+      {displayedLockStatus && selectedProfile && (
+        <ProductionLockBanner
+          key={selectedProfile.id}
+          profile={selectedProfile}
+          status={displayedLockStatus}
+          busy={productionLockBusy}
+          onUnlock={unlockProduction}
+          onLock={lockProduction}
+        />
+      )}
 
       <div
         className="shell"
@@ -2619,7 +2775,7 @@ export function App() {
               <b>{selectedProfile?.name ?? "资源"}</b>
               <button
                 className="icon-button import-resource"
-                disabled={demoMode || !selectedSession || busy}
+                disabled={demoMode || !selectedSession || busy || !writeAllowed}
                 onClick={() => void chooseImportFile()}
                 title="从 Atlas JSON 导入"
               >
@@ -2628,7 +2784,9 @@ export function App() {
               {selectedProfile?.adapter === "etcd" && (
                 <button
                   className="icon-button transaction-resource"
-                  disabled={demoMode || !selectedSession || busy}
+                  disabled={
+                    demoMode || !selectedSession || busy || !writeAllowed
+                  }
                   onClick={openEtcdTransaction}
                   title="etcd 原子批量事务"
                 >
@@ -2638,7 +2796,9 @@ export function App() {
               {selectedProfile?.adapter === "nacos" && (
                 <button
                   className="icon-button transaction-resource"
-                  disabled={demoMode || !selectedSession || busy}
+                  disabled={
+                    demoMode || !selectedSession || busy || !writeAllowed
+                  }
                   onClick={() => setNacosNativeOpen(true)}
                   title="Nacos 命名空间、服务与实例管理"
                 >
@@ -2647,7 +2807,7 @@ export function App() {
               )}
               <button
                 className="icon-button create-resource"
-                disabled={demoMode || !selectedSession || busy}
+                disabled={demoMode || !selectedSession || busy || !writeAllowed}
                 onClick={openCreateResource}
                 title="新建资源"
               >
@@ -2918,7 +3078,7 @@ export function App() {
                   {document.address.type === "nacosConfig" && (
                     <button
                       className="button"
-                      disabled={demoMode || busy}
+                      disabled={demoMode || busy || !writeAllowed}
                       onClick={() => setNacosNativeOpen(true)}
                     >
                       服务管理
@@ -2927,7 +3087,7 @@ export function App() {
                   {document.address.type === "etcd" && (
                     <button
                       className="button"
-                      disabled={busy}
+                      disabled={busy || !writeAllowed}
                       onClick={() => void openNativeInfo()}
                     >
                       Lease
@@ -2936,7 +3096,7 @@ export function App() {
                   {document.address.type === "zookeeper" && (
                     <button
                       className="button"
-                      disabled={busy}
+                      disabled={busy || !writeAllowed}
                       onClick={() => void openNativeInfo()}
                     >
                       ACL
@@ -2951,7 +3111,9 @@ export function App() {
                   </button>
                   <button
                     className="button danger"
-                    disabled={demoMode || busy || !document.version}
+                    disabled={
+                      demoMode || busy || !document.version || !writeAllowed
+                    }
                     onClick={prepareDelete}
                   >
                     删除
@@ -2961,6 +3123,7 @@ export function App() {
                     disabled={
                       demoMode ||
                       busy ||
+                      !writeAllowed ||
                       !document.version ||
                       draftValue === document.value.content
                     }

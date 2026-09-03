@@ -10,6 +10,7 @@ use std::{
         Arc,
         atomic::{AtomicU8, Ordering},
     },
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -660,6 +661,99 @@ pub struct ConnectionSession {
     pub name: String,
     pub adapter: AdapterId,
     pub endpoint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ProductionLockStatus {
+    pub connection_id: String,
+    pub production: bool,
+    pub locked: bool,
+    pub unlocked_until_ms: Option<u64>,
+    pub remaining_seconds: Option<u64>,
+}
+
+#[derive(Clone)]
+struct ConnectionWriteAccess {
+    name: String,
+    production: bool,
+    unlocked_until: Option<Instant>,
+    unlocked_until_ms: Option<u64>,
+}
+
+impl ConnectionWriteAccess {
+    const MIN_UNLOCK_SECONDS: u64 = 60;
+    const MAX_UNLOCK_SECONDS: u64 = 60 * 60;
+
+    fn new(name: String, environment: ConnectionEnvironment) -> Self {
+        Self {
+            name,
+            production: environment == ConnectionEnvironment::Production,
+            unlocked_until: None,
+            unlocked_until_ms: None,
+        }
+    }
+
+    fn status(&mut self, connection_id: &str, now: Instant) -> ProductionLockStatus {
+        if self.unlocked_until.is_some_and(|until| until <= now) {
+            self.lock();
+        }
+        let remaining_seconds = self
+            .unlocked_until
+            .map(|until| until.saturating_duration_since(now).as_secs().max(1));
+        ProductionLockStatus {
+            connection_id: connection_id.to_owned(),
+            production: self.production,
+            locked: self.production && remaining_seconds.is_none(),
+            unlocked_until_ms: self.unlocked_until_ms,
+            remaining_seconds,
+        }
+    }
+
+    fn unlock(
+        &mut self,
+        confirmation: &str,
+        duration_seconds: u64,
+        now: Instant,
+        now_ms: u64,
+    ) -> Result<(), RegistryError> {
+        self.validate_unlock(confirmation, duration_seconds)?;
+        self.unlocked_until = Some(now + Duration::from_secs(duration_seconds));
+        self.unlocked_until_ms = Some(now_ms.saturating_add(duration_seconds.saturating_mul(1000)));
+        Ok(())
+    }
+
+    fn validate_unlock(
+        &self,
+        confirmation: &str,
+        duration_seconds: u64,
+    ) -> Result<(), RegistryError> {
+        if !self.production {
+            return Err(RegistryError::validation(
+                "only production connections require a write unlock",
+            ));
+        }
+        if confirmation != self.name {
+            return Err(RegistryError::validation(
+                "production unlock confirmation must exactly match the connection name",
+            ));
+        }
+        if !(Self::MIN_UNLOCK_SECONDS..=Self::MAX_UNLOCK_SECONDS).contains(&duration_seconds) {
+            return Err(RegistryError::validation(format!(
+                "production unlock duration must be between {} and {} seconds",
+                Self::MIN_UNLOCK_SECONDS,
+                Self::MAX_UNLOCK_SECONDS
+            )));
+        }
+        Ok(())
+    }
+
+    fn lock(&mut self) {
+        self.unlocked_until = None;
+        self.unlocked_until_ms = None;
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -1794,6 +1888,7 @@ pub enum RegistryErrorCode {
     TlsConfiguration,
     Storage,
     Cancelled,
+    ProductionLocked,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -1896,6 +1991,10 @@ impl RegistryError {
     pub(crate) fn mutation_outcome_unknown(message: impl Into<String>) -> Self {
         Self::new(RegistryErrorCode::OutcomeUnknown, message, false)
     }
+
+    pub(crate) fn production_locked(message: impl Into<String>) -> Self {
+        Self::new(RegistryErrorCode::ProductionLocked, message, false)
+    }
 }
 
 #[derive(Default)]
@@ -1951,6 +2050,7 @@ struct WatchRegistration {
 #[derive(Clone, Default)]
 pub struct RegistryService {
     sessions: Arc<RwLock<BTreeMap<String, RegistrySession>>>,
+    write_access: Arc<RwLock<BTreeMap<String, ConnectionWriteAccess>>>,
     operations: Arc<RwLock<BTreeMap<OperationId, CancellationToken>>>,
     subscriptions: Arc<RwLock<BTreeMap<SubscriptionId, WatchRegistration>>>,
 }
@@ -2009,6 +2109,7 @@ impl RegistryService {
     ) -> Result<ConnectionSession, RegistryError> {
         profile.validate()?;
         let session = RegistrySession::connect(&profile, secret).await?;
+        let write_access = ConnectionWriteAccess::new(profile.name.clone(), profile.environment);
         let summary = ConnectionSession {
             id: profile.id.clone(),
             name: profile.name,
@@ -2019,6 +2120,10 @@ impl RegistryService {
             .write()
             .await
             .insert(summary.id.clone(), session);
+        self.write_access
+            .write()
+            .await
+            .insert(summary.id.clone(), write_access);
         Ok(summary)
     }
 
@@ -2047,12 +2152,83 @@ impl RegistryService {
 
     pub async fn close(&self, connection_id: &str) -> Result<(), RegistryError> {
         self.cancel_watches_for_connection(connection_id).await;
+        self.write_access.write().await.remove(connection_id);
         self.sessions
             .write()
             .await
             .remove(connection_id)
             .map(|_| ())
             .ok_or_else(|| Self::not_connected(connection_id))
+    }
+
+    pub async fn production_lock_status(
+        &self,
+        connection_id: &str,
+    ) -> Result<ProductionLockStatus, RegistryError> {
+        let mut access = self.write_access.write().await;
+        let policy = access
+            .get_mut(connection_id)
+            .ok_or_else(|| Self::not_connected(connection_id))?;
+        Ok(policy.status(connection_id, Instant::now()))
+    }
+
+    pub async fn unlock_production(
+        &self,
+        connection_id: &str,
+        confirmation: &str,
+        duration_seconds: u64,
+    ) -> Result<ProductionLockStatus, RegistryError> {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| RegistryError::storage("system clock is before Unix epoch"))?
+            .as_millis()
+            .try_into()
+            .map_err(|_| RegistryError::storage("system clock does not fit into u64"))?;
+        let mut access = self.write_access.write().await;
+        let policy = access
+            .get_mut(connection_id)
+            .ok_or_else(|| Self::not_connected(connection_id))?;
+        policy.unlock(confirmation, duration_seconds, Instant::now(), now_ms)?;
+        Ok(policy.status(connection_id, Instant::now()))
+    }
+
+    pub async fn validate_production_unlock(
+        &self,
+        connection_id: &str,
+        confirmation: &str,
+        duration_seconds: u64,
+    ) -> Result<(), RegistryError> {
+        let access = self.write_access.read().await;
+        let policy = access
+            .get(connection_id)
+            .ok_or_else(|| Self::not_connected(connection_id))?;
+        policy.validate_unlock(confirmation, duration_seconds)
+    }
+
+    pub async fn lock_production(
+        &self,
+        connection_id: &str,
+    ) -> Result<ProductionLockStatus, RegistryError> {
+        let mut access = self.write_access.write().await;
+        let policy = access
+            .get_mut(connection_id)
+            .ok_or_else(|| Self::not_connected(connection_id))?;
+        policy.lock();
+        Ok(policy.status(connection_id, Instant::now()))
+    }
+
+    pub(crate) async fn ensure_mutation_allowed(
+        &self,
+        connection_id: &str,
+    ) -> Result<(), RegistryError> {
+        let status = self.production_lock_status(connection_id).await?;
+        if status.locked {
+            Err(RegistryError::production_locked(
+                "production connection is read-only; unlock writes for a bounded duration before dispatch",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn list(
@@ -2300,6 +2476,7 @@ impl RegistryService {
         mut action: NacosNativeAction,
         phase: MutationPhase,
     ) -> Result<NacosNativeActionResult, RegistryError> {
+        self.ensure_mutation_allowed(connection_id).await?;
         action.validate()?;
         self.session(connection_id)
             .await?
@@ -2362,6 +2539,7 @@ impl RegistryService {
         mutation: ResourceMutation,
         phase: MutationPhase,
     ) -> Result<MutationResult, RegistryError> {
+        self.ensure_mutation_allowed(connection_id).await?;
         mutation.validate()?;
         let session = self.session(connection_id).await?;
         session.mutate(mutation, phase).await
@@ -2403,6 +2581,7 @@ impl RegistryService {
         transaction: EtcdTransaction,
         phase: MutationPhase,
     ) -> Result<EtcdTransactionResult, RegistryError> {
+        self.ensure_mutation_allowed(connection_id).await?;
         transaction.validate()?;
         let session = self.session(connection_id).await?;
         session.execute_etcd_transaction(transaction, phase).await
@@ -2423,6 +2602,7 @@ impl RegistryService {
         action: EtcdLeaseAction,
         phase: MutationPhase,
     ) -> Result<EtcdLeaseActionResult, RegistryError> {
+        self.ensure_mutation_allowed(connection_id).await?;
         action.validate()?;
         let session = self.session(connection_id).await?;
         session.execute_etcd_lease_action(action, phase).await
@@ -2447,6 +2627,7 @@ impl RegistryService {
         action: ZookeeperNativeAction,
         phase: MutationPhase,
     ) -> Result<ZookeeperNativeActionResult, RegistryError> {
+        self.ensure_mutation_allowed(connection_id).await?;
         action.validate()?;
         let session = self.session(connection_id).await?;
         session.execute_zookeeper_native_action(action, phase).await
@@ -2679,13 +2860,16 @@ impl RegistryService {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use base64::{Engine as _, engine::general_purpose::STANDARD};
 
     use super::{
-        EncodedValue, EtcdLeaseAction, EtcdTransaction, MutationPhase, NacosNativeAction,
-        NativeResourceInfo, OperationId, RegistryError, RegistryErrorCode, RegistryService,
-        ResourceAddress, ResourceMutation, ResourceSearchRequest, SubscriptionId, WatchChangeKind,
-        WatchEvent, WatchRequest, WatchStatusState, ZookeeperNativeAction,
+        ConnectionEnvironment, ConnectionWriteAccess, EncodedValue, EtcdLeaseAction,
+        EtcdTransaction, MutationPhase, NacosNativeAction, NativeResourceInfo, OperationId,
+        RegistryError, RegistryErrorCode, RegistryService, ResourceAddress, ResourceMutation,
+        ResourceSearchRequest, SubscriptionId, WatchChangeKind, WatchEvent, WatchRequest,
+        WatchStatusState, ZookeeperNativeAction,
     };
 
     #[test]
@@ -3221,5 +3405,77 @@ mod tests {
             })
         ));
         assert!(service.stop_watch(&second).await);
+    }
+
+    #[test]
+    fn production_write_access_is_session_scoped_bounded_and_expires_closed() {
+        let now = Instant::now();
+        let mut access = ConnectionWriteAccess::new(
+            "Payments Production".to_owned(),
+            ConnectionEnvironment::Production,
+        );
+        assert!(access.status("connection-1", now).locked);
+
+        let wrong_confirmation = access
+            .unlock("payments production", 300, now, 1_000)
+            .unwrap_err();
+        assert_eq!(wrong_confirmation.code, RegistryErrorCode::Validation);
+        let unbounded = access
+            .unlock("Payments Production", 3_601, now, 1_000)
+            .unwrap_err();
+        assert_eq!(unbounded.code, RegistryErrorCode::Validation);
+
+        access
+            .unlock("Payments Production", 300, now, 1_000)
+            .unwrap();
+        let unlocked = access.status("connection-1", now);
+        assert!(!unlocked.locked);
+        assert_eq!(unlocked.remaining_seconds, Some(300));
+        assert_eq!(unlocked.unlocked_until_ms, Some(301_000));
+
+        let expired = access.status("connection-1", now + Duration::from_secs(300));
+        assert!(expired.locked);
+        assert_eq!(expired.remaining_seconds, None);
+        assert_eq!(expired.unlocked_until_ms, None);
+    }
+
+    #[test]
+    fn non_production_write_access_never_requires_an_unlock() {
+        let now = Instant::now();
+        let mut access =
+            ConnectionWriteAccess::new("Staging".to_owned(), ConnectionEnvironment::Staging);
+        assert!(!access.status("connection-2", now).locked);
+        assert!(access.unlock("Staging", 300, now, 1_000).is_err());
+    }
+
+    #[tokio::test]
+    async fn close_and_service_restart_discard_the_production_write_window() {
+        let service = RegistryService::default();
+        service.write_access.write().await.insert(
+            "connection-3".to_owned(),
+            ConnectionWriteAccess::new("Production".to_owned(), ConnectionEnvironment::Production),
+        );
+        service
+            .unlock_production("connection-3", "Production", 300)
+            .await
+            .unwrap();
+        service
+            .ensure_mutation_allowed("connection-3")
+            .await
+            .unwrap();
+
+        let close_error = service.close("connection-3").await.unwrap_err();
+        assert_eq!(close_error.code, RegistryErrorCode::NotConnected);
+        let closed = service
+            .production_lock_status("connection-3")
+            .await
+            .unwrap_err();
+        assert_eq!(closed.code, RegistryErrorCode::NotConnected);
+
+        let restarted = RegistryService::default()
+            .production_lock_status("connection-3")
+            .await
+            .unwrap_err();
+        assert_eq!(restarted.code, RegistryErrorCode::NotConnected);
     }
 }

@@ -168,7 +168,7 @@ test("the production UI reads demo data only through the isolated source", () =>
   assert.match(appSource, /!demoMode\s*&&\s*pendingMutation/);
   assert.match(
     appSource,
-    /disabled=\{demoMode \|\| busy \|\| !document\.version\}/,
+    /disabled=\{[\s\S]{0,120}demoMode \|\| busy \|\| !document\.version \|\| !writeAllowed[\s\S]{0,40}\}/,
   );
   assert.match(appSource, /disabled=\{demoMode \|\| busy\}/);
   assert.match(appSource, /SYNTHETIC DEMO · READ ONLY/);

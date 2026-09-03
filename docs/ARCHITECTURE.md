@@ -44,7 +44,7 @@ flowchart LR
 
 四层分工，新代码必须遵守：
 
-1. **纯函数状态与工作流模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/safeChange.ts`、`src/nacosPaging.ts`、`src/configLanguage.ts`、`src/configValidation.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React；IO 通过窄函数参数注入，承载全部可测试的状态转换和工作流编排；`scripts/*.test.mjs` 直接导入或转译并断言这些模块。
+1. **纯函数状态与工作流模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/safeChange.ts`、`src/productionLock.ts`、`src/nacosPaging.ts`、`src/configLanguage.ts`、`src/configValidation.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React；IO 通过窄函数参数注入，承载全部可测试的状态转换和工作流编排；`scripts/*.test.mjs` 直接导入或转译并断言这些模块。
 2. **工作区数据源层**（`src/workspaceSource.ts`、`src/demoWorkspace.ts`）：为 profile/session bootstrap、浏览、读取、搜索和原生只读信息提供同一接口。live 实现适配 `registry.ts`，demo 实现只使用内置合成数据，不得导入 registry runtime、访问网络或浏览器存储，也不承载 mutation。
 3. **Hook 组合层**（`src/useResourceWorkspace.ts`、`src/useRegistryOperations.ts`）：把纯函数模块与 IPC 调用、取消、乐观状态接到 React 上。
 4. **组件层**（`src/App.tsx` 与各 `*Dialog.tsx`）：渲染与事件接线，不写业务规则。
@@ -56,6 +56,8 @@ flowchart LR
 资源正文由 `ConfigEditor.tsx` 中的 CodeMirror 6 编辑器承载。语言识别优先使用实际编码、Nacos `contentType` 和资源标识扩展名；JSON、YAML、XML、TOML 校验只在用户点击校验、保存或创建时执行，失败默认阻止但允许用户明确强制继续。校验不自动格式化正文，也不替代 Rust 侧既有的条件变更、审计和结果不确定处理。
 
 现有资源更新统一由 `safeChange.ts` 编排：先通过 `read_resource` 做权威预检，再由用户审阅最多 200 行 / 32K 字符的 Before/After Diff 并输入连接名，随后恰好调用一次 `mutate_resource`。Rust 仍在提交临界区再次读取并比较 etcd revision、ZooKeeper version 或 Nacos MD5；调用成功后前端再次 `read_resource`，展示权威版本。冲突、`outcomeUnknown`、`auditIncomplete` 分别保持独立终态，不会把回读当成自动重试。收据只选择地址、环境、协议令牌、SHA-256、大小、编码和恢复建议，不序列化资源正文、连接 endpoint 或错误原文。
+
+生产 profile 打开后默认只读。`RegistryService` 为每个已连接会话维护不持久化的写入权限：解锁必须精确匹配连接名且限定 60–3600 秒，审计事件同步落盘后才开放窗口；断开、进程重启或单调时钟到期都会失效。UI 每秒显示剩余时间并在到期时关闭待确认写入，Rust 在所有通用与协议原生 mutation 的 dispatch 临界点再次检查，结构化返回 `productionLocked`，因此前端时钟漂移或到期竞争不能越过保护。
 
 ## IPC 契约
 
@@ -89,13 +91,13 @@ flowchart LR
 
 ## 安全边界
 
-| 边界         | 机制                                                                                                                                                                          |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| WebView 权限 | CSP 禁外联；capability 只授权 `main` 窗口调用应用命令（[tauri.conf.json](../src-tauri/tauri.conf.json)、[capabilities/default.json](../src-tauri/capabilities/default.json)） |
-| 凭据         | 密码、token、MSE AccessKey Secret 只进系统凭据库（`keyring`），连接配置文件不含 secret；临时凭据仅存活于当前连接，`zeroize` 擦除                                              |
-| 审计         | `mutation-audit.jsonl` 记录版本 / 大小 / 编码 / SHA-256 摘要，不记录 value、密码、token；started 事件先于远端变更同步落盘                                                     |
-| 诊断包       | 只含运行时版本、adapter 能力、聚合连接计数；由 sentinel 测试（`diagnostics.rs`）禁止出现连接名 / endpoint / namespace / 凭据                                                  |
-| 更新         | 只访问 GitHub Releases 的 `latest.json`，minisign 签名验证不可关闭，下载安装全在 Rust 侧                                                                                      |
+| 边界         | 机制                                                                                                                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| WebView 权限 | CSP 禁外联；capability 只授权 `main` 窗口调用应用命令（[tauri.conf.json](../src-tauri/tauri.conf.json)、[capabilities/default.json](../src-tauri/capabilities/default.json)）           |
+| 凭据         | 密码、token、MSE AccessKey Secret 只进系统凭据库（`keyring`），连接配置文件不含 secret；临时凭据仅存活于当前连接，`zeroize` 擦除                                                        |
+| 审计         | `mutation-audit.jsonl` 记录版本 / 大小 / 编码 / SHA-256 摘要及生产锁连接 ID / 时长，不记录 value、密码、token、连接名或 endpoint；started / unlock 事件先于远端变更或开放写窗口同步落盘 |
+| 诊断包       | 只含运行时版本、adapter 能力、聚合连接计数；由 sentinel 测试（`diagnostics.rs`）禁止出现连接名 / endpoint / namespace / 凭据                                                            |
+| 更新         | 只访问 GitHub Releases 的 `latest.json`，minisign 签名验证不可关闭，下载安装全在 Rust 侧                                                                                                |
 
 ## 关键不变量
 
@@ -105,9 +107,10 @@ flowchart LR
    Nacos 普通列表固定每页最多 50 条；模糊搜索分别查询 dataId 与 group，单次翻页每路至多读取一个上游页，合并后允许短页，不为总页数、填满页面或全局排序扫描全部命中。
 2. **条件变更**：etcd revision、ZooKeeper version/aversion、Nacos MD5 / SHA-256 指纹；Nacos 管理 API 无 CAS，采用「读时指纹比较 + 写后有界回读确认（≤ 20 次 × 200 ms）」并在 UI 明示竞争窗口。
 3. **结果不确定性诚实上报**：取消 / 超时 / 提交后传输错误 → `mutationOutcomeUnknown`，不自动重试；远端成功但审计落盘失败 → `auditIncomplete`，两者不得混淆。
-4. **Nacos SDK cache 不可信**：配置正文读取、写前检查、写后确认、周期对账一律走版本对应的权威 HTTP API；SDK 只承担 gRPC mutation、listener 与临时实例 session（原因见 ADR-0001 上游约束）。
-5. **MSE 签名路径一致**：SDK Config/Naming 身份上下文与权威 HTTP API 共享 AccessKey 生命周期和 HMAC-SHA1 规则，但分别遵循 SDK `RequestResource` 与 HTTP 参数的资源规范化语义；HTTP Config 在 namespace 非空时保留空 group 分隔符。AK Secret 不进入 URL、连接配置或日志。
-6. **取消安全**：长操作挂在 `CancellationToken` 上；审计追加在独立任务中 `write_all + sync_data`，不被取消切断。
+4. **生产默认只读**：production 会话的写窗口仅存在内存且有界；所有 mutation 在 dispatch 前检查同一单调时钟状态，到期竞争必须返回 `productionLocked`。
+5. **Nacos SDK cache 不可信**：配置正文读取、写前检查、写后确认、周期对账一律走版本对应的权威 HTTP API；SDK 只承担 gRPC mutation、listener 与临时实例 session（原因见 ADR-0001 上游约束）。
+6. **MSE 签名路径一致**：SDK Config/Naming 身份上下文与权威 HTTP API 共享 AccessKey 生命周期和 HMAC-SHA1 规则，但分别遵循 SDK `RequestResource` 与 HTTP 参数的资源规范化语义；HTTP Config 在 namespace 非空时保留空 group 分隔符。AK Secret 不进入 URL、连接配置或日志。
+7. **取消安全**：长操作挂在 `CancellationToken` 上；审计追加在独立任务中 `write_all + sync_data`，不被取消切断。
 
 ## 测试体系
 

@@ -22,6 +22,8 @@ pub enum AuditHistoryKind {
     Applied,
     Failed,
     OutcomeUnknown,
+    ProductionUnlocked,
+    ProductionLocked,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -63,6 +65,7 @@ pub struct AuditHistoryItem {
     pub current: Option<ResourceSnapshot>,
     pub consistency: Option<crate::registry::MutationConsistency>,
     pub error_code: Option<RegistryErrorCode>,
+    pub duration_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -130,6 +133,19 @@ enum StoredAuditEvent {
         consistency: crate::registry::MutationConsistency,
         target: Option<String>,
     },
+    #[serde(rename = "productionUnlocked")]
+    ProductionUnlocked {
+        timestamp_ms: u64,
+        connection_id: String,
+        operation_id: String,
+        duration_seconds: u64,
+    },
+    #[serde(rename = "productionLocked")]
+    ProductionLocked {
+        timestamp_ms: u64,
+        connection_id: String,
+        operation_id: String,
+    },
 }
 
 impl StoredAuditEvent {
@@ -140,7 +156,9 @@ impl StoredAuditEvent {
             | Self::Failed { connection_id, .. }
             | Self::OutcomeUnknown { connection_id, .. }
             | Self::NativeStarted { connection_id, .. }
-            | Self::NativeApplied { connection_id, .. } => connection_id,
+            | Self::NativeApplied { connection_id, .. }
+            | Self::ProductionUnlocked { connection_id, .. }
+            | Self::ProductionLocked { connection_id, .. } => connection_id,
         }
     }
 }
@@ -170,6 +188,7 @@ impl From<StoredAuditEvent> for AuditHistoryItem {
                 current: None,
                 consistency: None,
                 error_code: None,
+                duration_seconds: None,
             },
             StoredAuditEvent::Applied {
                 timestamp_ms,
@@ -190,6 +209,7 @@ impl From<StoredAuditEvent> for AuditHistoryItem {
                 current: result.current,
                 consistency: Some(result.consistency),
                 error_code: None,
+                duration_seconds: None,
             },
             StoredAuditEvent::Failed {
                 timestamp_ms,
@@ -210,6 +230,7 @@ impl From<StoredAuditEvent> for AuditHistoryItem {
                 current: None,
                 consistency: None,
                 error_code: Some(code),
+                duration_seconds: None,
             },
             StoredAuditEvent::OutcomeUnknown {
                 timestamp_ms,
@@ -229,6 +250,7 @@ impl From<StoredAuditEvent> for AuditHistoryItem {
                 current: None,
                 consistency: None,
                 error_code: None,
+                duration_seconds: None,
             },
             StoredAuditEvent::NativeStarted {
                 timestamp_ms,
@@ -253,6 +275,7 @@ impl From<StoredAuditEvent> for AuditHistoryItem {
                 current: None,
                 consistency: None,
                 error_code: None,
+                duration_seconds: None,
             },
             StoredAuditEvent::NativeApplied {
                 timestamp_ms,
@@ -278,6 +301,48 @@ impl From<StoredAuditEvent> for AuditHistoryItem {
                 current,
                 consistency: Some(consistency),
                 error_code: None,
+                duration_seconds: None,
+            },
+            StoredAuditEvent::ProductionUnlocked {
+                timestamp_ms,
+                connection_id,
+                operation_id,
+                duration_seconds,
+            } => Self {
+                kind: AuditHistoryKind::ProductionUnlocked,
+                timestamp_ms,
+                connection_id,
+                operation_id,
+                operation: None,
+                native_operation: None,
+                address: None,
+                native_target: None,
+                expected_version: None,
+                previous: None,
+                current: None,
+                consistency: None,
+                error_code: None,
+                duration_seconds: Some(duration_seconds),
+            },
+            StoredAuditEvent::ProductionLocked {
+                timestamp_ms,
+                connection_id,
+                operation_id,
+            } => Self {
+                kind: AuditHistoryKind::ProductionLocked,
+                timestamp_ms,
+                connection_id,
+                operation_id,
+                operation: None,
+                native_operation: None,
+                address: None,
+                native_target: None,
+                expected_version: None,
+                previous: None,
+                current: None,
+                consistency: None,
+                error_code: None,
+                duration_seconds: None,
             },
         }
     }
@@ -343,6 +408,19 @@ enum AuditEvent<'a> {
         current: Option<&'a ResourceSnapshot>,
         consistency: crate::registry::MutationConsistency,
         target: Option<&'a str>,
+    },
+    #[serde(rename = "productionUnlocked")]
+    ProductionUnlocked {
+        timestamp_ms: u64,
+        connection_id: &'a str,
+        operation_id: &'a str,
+        duration_seconds: u64,
+    },
+    #[serde(rename = "productionLocked")]
+    ProductionLocked {
+        timestamp_ms: u64,
+        connection_id: &'a str,
+        operation_id: &'a str,
     },
 }
 
@@ -596,6 +674,42 @@ impl AuditLog {
                 current,
                 consistency,
                 target,
+            },
+        )
+        .await
+    }
+
+    pub async fn record_production_unlocked_in(
+        &self,
+        directory: &Path,
+        connection_id: &str,
+        operation_id: &str,
+        duration_seconds: u64,
+    ) -> Result<(), RegistryError> {
+        self.append(
+            directory,
+            &AuditEvent::ProductionUnlocked {
+                timestamp_ms: timestamp_ms()?,
+                connection_id,
+                operation_id,
+                duration_seconds,
+            },
+        )
+        .await
+    }
+
+    pub async fn record_production_locked_in(
+        &self,
+        directory: &Path,
+        connection_id: &str,
+        operation_id: &str,
+    ) -> Result<(), RegistryError> {
+        self.append(
+            directory,
+            &AuditEvent::ProductionLocked {
+                timestamp_ms: timestamp_ms()?,
+                connection_id,
+                operation_id,
             },
         )
         .await

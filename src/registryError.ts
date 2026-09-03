@@ -22,6 +22,7 @@ const registryErrorCodes = new Set<RegistryErrorCode>([
   "tlsConfiguration",
   "storage",
   "cancelled",
+  "productionLocked",
 ]);
 
 export function isRegistryError(
@@ -42,6 +43,9 @@ export function isRegistryError(
 
 export function registryErrorMessage(reason: unknown): string {
   if (typeof reason === "string") return reason;
+  if (isRegistryError(reason, "productionLocked")) {
+    return "生产连接当前为只读；请在顶部限时解锁后重新确认操作";
+  }
   if (reason && typeof reason === "object" && "message" in reason) {
     return String(reason.message);
   }
