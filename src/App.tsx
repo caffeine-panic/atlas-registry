@@ -61,6 +61,7 @@ import {
 import { HistoryDialog } from "./HistoryDialog";
 import { NacosHistoryDialog } from "./NacosHistoryDialog";
 import { NacosNativeDialog } from "./NacosNativeDialog";
+import { NativeInfoDialog } from "./NativeInfoDialog";
 import { EtcdLeaseDialog } from "./EtcdLeaseDialog";
 import {
   ZookeeperAclDialog,
@@ -75,10 +76,8 @@ import {
 import {
   ROOT_ADDRESS,
   applyImport,
-  cancelOperation,
   checkForAppUpdate,
   chooseImport,
-  closeConnection,
   connectionEnvironmentLabels,
   deleteConnectionProfile,
   errorMessage,
@@ -87,24 +86,17 @@ import {
   executeZookeeperNativeAction,
   exportDiagnosticBundle,
   exportResource,
-  inspectNativeResource,
   installAppUpdate,
   isCancelled,
   isNotFound,
   isOutcomeUnknown,
-  listResources,
   listResourceHistory,
   loadAuditHistory,
-  loadConnectionProfiles,
   newConnectionId,
   mutateResource,
   mutationFailureRecovery,
-  openConnection,
   probeConnection,
-  readResource,
   readResourceHistory,
-  registryCapabilities,
-  searchResources,
   startWatch,
   stopWatch,
   upsertConnectionProfile,
@@ -130,6 +122,12 @@ import {
   type WatchStatusState,
   type ZookeeperNativeAction,
 } from "./registry";
+import {
+  searchForWorkspaceMode,
+  workspaceModeFromSearch,
+  type WorkspaceMode,
+} from "./demoWorkspace";
+import { createWorkspaceSource } from "./workspaceSource";
 
 type WatchChangeEvent = Extract<WatchEvent, { kind: "change" }>;
 
@@ -317,6 +315,14 @@ function searchScope(
 }
 
 export function App() {
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() =>
+    workspaceModeFromSearch(globalThis.location?.search ?? ""),
+  );
+  const workspaceSource = useMemo(
+    () => createWorkspaceSource(workspaceMode),
+    [workspaceMode],
+  );
+  const demoMode = workspaceMode === "demo";
   const [capabilities, setCapabilities] = useState<AdapterDescriptor[]>();
   const [profiles, setProfiles] = useState<ConnectionProfile[]>([]);
   const [sessions, setSessions] = useState<Record<string, ConnectionSession>>(
@@ -412,7 +418,7 @@ export function App() {
   const historyGeneration = useRef(0);
   const operations = useRegistryOperations<"main" | "serverHistory">(
     newConnectionId,
-    cancelOperation,
+    workspaceSource.cancelOperation,
   );
   const activeOperation = operations.active.main;
   const [nacosPageNumber, setNacosPageNumber] = useState(1);
@@ -530,21 +536,54 @@ export function App() {
   }, [document?.address, document?.version]);
 
   useEffect(() => {
-    registryCapabilities()
-      .then(setCapabilities)
-      .catch((reason: unknown) =>
-        setToast((current) =>
-          nextToast(current, errorMessage(reason), "error"),
-        ),
-      );
-    loadConnectionProfiles()
-      .then(setProfiles)
-      .catch((reason: unknown) =>
-        setToast((current) =>
-          nextToast(current, errorMessage(reason), "error"),
-        ),
-      );
-  }, []);
+    let current = true;
+    setCapabilities(undefined);
+    setProfiles([]);
+    setSessions({});
+    setSelectedId(undefined);
+    clearView();
+    setNacosPageNumber(1);
+    setNacosTotalPages(1);
+    setNacosSearchPages([]);
+    setNacosSearchPageIndex(0);
+    normalNacosSnapshot.current = undefined;
+    workspaceSource
+      .bootstrap()
+      .then((bootstrap) => {
+        if (!current) return;
+        setCapabilities(bootstrap.capabilities);
+        setProfiles(bootstrap.profiles);
+        setSessions(bootstrap.sessions);
+        setSelectedId(bootstrap.selectedId);
+        if (bootstrap.rootPage) {
+          setRows(
+            pageRows(
+              bootstrap.rootPage.items,
+              0,
+              bootstrap.rootPage.parent,
+              bootstrap.rootPage.numbered
+                ? undefined
+                : bootstrap.rootPage.nextCursor,
+            ),
+          );
+          if (bootstrap.rootPage.numbered) {
+            setNacosPageNumber(bootstrap.rootPage.numbered.pageNumber);
+            setNacosTotalPages(bootstrap.rootPage.numbered.totalPages);
+          }
+        }
+        if (bootstrap.document) {
+          showDocument(bootstrap.document);
+          setSelectedAddress(bootstrap.document.address);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!current) return;
+        setToast((toast) => nextToast(toast, errorMessage(reason), "error"));
+      });
+    return () => {
+      current = false;
+    };
+  }, [clearView, setRows, setSelectedAddress, showDocument, workspaceSource]);
 
   useEffect(
     () => () => {
@@ -632,7 +671,12 @@ export function App() {
   ) => {
     const operationId = startOperation();
     try {
-      return await listResources(connectionId, parent, operationId, cursor);
+      return await workspaceSource.listResources(
+        connectionId,
+        parent,
+        operationId,
+        cursor,
+      );
     } finally {
       finishOperation(operationId);
     }
@@ -641,7 +685,11 @@ export function App() {
   const runRead = async (connectionId: string, address: ResourceAddress) => {
     const operationId = startOperation();
     try {
-      return await readResource(connectionId, address, operationId);
+      return await workspaceSource.readResource(
+        connectionId,
+        address,
+        operationId,
+      );
     } finally {
       finishOperation(operationId);
     }
@@ -655,7 +703,7 @@ export function App() {
   ) => {
     const operationId = startOperation();
     try {
-      return await searchResources(
+      return await workspaceSource.searchResources(
         connectionId,
         scope,
         query,
@@ -703,6 +751,45 @@ export function App() {
     await releaseActiveWatch(clearView);
   };
 
+  const switchWorkspaceMode = async (nextMode: WorkspaceMode) => {
+    if (nextMode === workspaceMode || busy) return;
+    setBusy(true);
+    clearToast();
+    await stopActiveWatch();
+    await operations.cancel("serverHistory").catch(() => false);
+    if (!demoMode) {
+      await Promise.allSettled(
+        Object.values(sessions).map((session) =>
+          workspaceSource.closeConnection(session.id),
+        ),
+      );
+    }
+    setSettingsOpen(false);
+    setDialogOpen(false);
+    setCreateDialogOpen(false);
+    setPendingMutation(undefined);
+    setPendingZookeeperAction(undefined);
+    setEtcdTransactionOpen(false);
+    setExportDialogOpen(false);
+    setImportPreview(undefined);
+    setHistoryOpen(false);
+    setServerHistoryOpen(false);
+    setNacosNativeOpen(false);
+    setNativeInfoOpen(false);
+    setNativeInfo(undefined);
+    const nextSearch = searchForWorkspaceMode(
+      globalThis.location?.search ?? "",
+      nextMode,
+    );
+    globalThis.history?.replaceState(
+      null,
+      "",
+      `${globalThis.location?.pathname ?? "/"}${nextSearch}${globalThis.location?.hash ?? ""}`,
+    );
+    setWorkspaceMode(nextMode);
+    setBusy(false);
+  };
+
   const handleWatchEvent = (event: WatchEvent) => {
     setResourceWatch((current) => {
       if (!current || current.subscriptionId !== event.subscriptionId)
@@ -733,6 +820,10 @@ export function App() {
 
   const startResourceWatch = async () => {
     if (!selectedSession || !selectedProfile || !document || busy) return;
+    if (demoMode) {
+      showInfo("演示工作区不会建立远端监听");
+      return;
+    }
     const generation = watchGeneration.current + 1;
     watchGeneration.current = generation;
     await releaseActiveWatch();
@@ -857,7 +948,11 @@ export function App() {
       const operationId = startOperation();
       let session: ConnectionSession;
       try {
-        session = await openConnection(profile, operationId, transientSecret);
+        session = await workspaceSource.openConnection(
+          profile,
+          operationId,
+          transientSecret,
+        );
       } finally {
         finishOperation(operationId);
       }
@@ -1774,7 +1869,7 @@ export function App() {
     const operationId = startOperation();
     try {
       setNativeInfo(
-        await inspectNativeResource(
+        await workspaceSource.inspectNativeResource(
           selectedSession.id,
           document.address,
           operationId,
@@ -1825,7 +1920,7 @@ export function App() {
       } else {
         try {
           setNativeInfo(
-            await inspectNativeResource(
+            await workspaceSource.inspectNativeResource(
               selectedSession.id,
               action.address,
               newConnectionId(),
@@ -1848,7 +1943,7 @@ export function App() {
         setSelectedAddress(action.address);
         if (refreshed.metadata.lease && refreshed.metadata.lease !== "0") {
           setNativeInfo(
-            await inspectNativeResource(
+            await workspaceSource.inspectNativeResource(
               selectedSession.id,
               action.address,
               newConnectionId(),
@@ -1901,7 +1996,7 @@ export function App() {
         showSuccess(`${path} 已原子创建并继承父 ACL；脱敏审计已记录`);
       } else {
         setNativeInfo(
-          await inspectNativeResource(
+          await workspaceSource.inspectNativeResource(
             selectedSession.id,
             result.address,
             newConnectionId(),
@@ -1917,7 +2012,7 @@ export function App() {
         await reloadRoot(selectedSession.id);
         if (action.action === "setAcl") {
           setNativeInfo(
-            await inspectNativeResource(
+            await workspaceSource.inspectNativeResource(
               selectedSession.id,
               action.address,
               newConnectionId(),
@@ -2049,7 +2144,7 @@ export function App() {
     await stopActiveWatch();
     await operations.cancel("serverHistory").catch(() => false);
     try {
-      await closeConnection(selectedSession.id);
+      await workspaceSource.closeConnection(selectedSession.id);
     } catch {
       // A closed backend session and an absent session have the same local result.
     }
@@ -2112,7 +2207,7 @@ export function App() {
       if (selectedId === form.id) await stopActiveWatch();
       if (sessions[form.id]) {
         try {
-          await closeConnection(form.id);
+          await workspaceSource.closeConnection(form.id);
         } catch {
           // Missing and already-closed sessions have the same local outcome.
         }
@@ -2153,47 +2248,84 @@ export function App() {
       ].includes(resourceWatch.state)
     : false;
 
+  const demoReady =
+    demoMode &&
+    Boolean(capabilities) &&
+    Boolean(selectedSession) &&
+    rows.length > 0 &&
+    Boolean(document);
+
   return (
-    <div className="app">
+    <div
+      className="app"
+      data-workspace-mode={workspaceMode}
+      data-demo-ready={demoReady ? "true" : undefined}
+    >
       <header className="topbar" data-tauri-drag-region="deep">
         <div className="brand">
           <span className="logo">A</span>Atlas Registry
         </div>
         <span className="release-tag">SAFE-WRITE ALPHA</span>
+        {demoMode && (
+          <span className="demo-badge">SYNTHETIC DEMO · READ ONLY</span>
+        )}
         <div className="top-spacer" data-tauri-drag-region />
         <div className={`runtime ${capabilities ? "" : "pending"}`}>
           <span className="status-dot" />
-          {capabilities
-            ? `Rust Core · ${capabilities.length} adapters`
-            : "正在启动 Rust Core…"}
+          {demoMode
+            ? capabilities
+              ? `Synthetic · ${capabilities.length} adapters`
+              : "正在准备合成数据…"
+            : capabilities
+              ? `Rust Core · ${capabilities.length} adapters`
+              : "正在启动 Rust Core…"}
         </div>
-        <button
-          className="button update-button"
-          disabled={checkingUpdate || installingUpdate}
-          onClick={() => void checkForUpdates()}
-        >
-          {checkingUpdate ? "检查中…" : "⇩ 更新"}
-        </button>
-        <button
-          className="button"
-          disabled={checkingUpdate || installingUpdate}
-          onClick={() => setSettingsOpen(true)}
-        >
-          ⚙ 设置
-        </button>
-        <button
-          className="button"
-          disabled={busy}
-          onClick={() => void exportDiagnostics()}
-        >
-          诊断包
-        </button>
-        <button className="button" onClick={openHistory}>
-          历史
-        </button>
-        <button className="button primary" onClick={openNewConnection}>
-          ＋ 新建连接
-        </button>
+        {demoMode ? (
+          <button
+            className="button"
+            disabled={busy}
+            onClick={() => void switchWorkspaceMode("live")}
+          >
+            退出演示
+          </button>
+        ) : (
+          <>
+            <button
+              className="button demo-button"
+              disabled={busy}
+              onClick={() => void switchWorkspaceMode("demo")}
+            >
+              ◇ 演示
+            </button>
+            <button
+              className="button update-button"
+              disabled={checkingUpdate || installingUpdate}
+              onClick={() => void checkForUpdates()}
+            >
+              {checkingUpdate ? "检查中…" : "⇩ 更新"}
+            </button>
+            <button
+              className="button"
+              disabled={checkingUpdate || installingUpdate}
+              onClick={() => setSettingsOpen(true)}
+            >
+              ⚙ 设置
+            </button>
+            <button
+              className="button"
+              disabled={busy}
+              onClick={() => void exportDiagnostics()}
+            >
+              诊断包
+            </button>
+            <button className="button" onClick={openHistory}>
+              历史
+            </button>
+            <button className="button primary" onClick={openNewConnection}>
+              ＋ 新建连接
+            </button>
+          </>
+        )}
       </header>
 
       <div
@@ -2260,7 +2392,7 @@ export function App() {
               </button>
             ))}
 
-            {selectedProfile && !selectedSession && (
+            {!demoMode && selectedProfile && !selectedSession && (
               <button
                 className="button primary wide"
                 disabled={busy}
@@ -2269,12 +2401,12 @@ export function App() {
                 {busy ? "连接中…" : "连接并浏览"}
               </button>
             )}
-            {selectedSession && (
+            {!demoMode && selectedSession && (
               <button className="button wide" onClick={() => void disconnect()}>
                 断开连接
               </button>
             )}
-            {selectedProfile && (
+            {!demoMode && selectedProfile && (
               <div className="connection-actions">
                 <button
                   className="button"
@@ -2292,12 +2424,16 @@ export function App() {
                 </button>
               </div>
             )}
-            <button className="button wide" onClick={openNewConnection}>
-              ＋ 添加连接
-            </button>
+            {!demoMode && (
+              <button className="button wide" onClick={openNewConnection}>
+                ＋ 添加连接
+              </button>
+            )}
 
             <div className="capabilities">
-              <div className="eyebrow">NATIVE RUST ADAPTERS</div>
+              <div className="eyebrow">
+                {demoMode ? "SYNTHETIC ADAPTERS" : "NATIVE RUST ADAPTERS"}
+              </div>
               {capabilities?.map((adapter) => (
                 <span
                   className={`badge ${adapter.id}`}
@@ -2354,7 +2490,7 @@ export function App() {
               <b>{selectedProfile?.name ?? "资源"}</b>
               <button
                 className="icon-button import-resource"
-                disabled={!selectedSession || busy}
+                disabled={demoMode || !selectedSession || busy}
                 onClick={() => void chooseImportFile()}
                 title="从 Atlas JSON 导入"
               >
@@ -2363,7 +2499,7 @@ export function App() {
               {selectedProfile?.adapter === "etcd" && (
                 <button
                   className="icon-button transaction-resource"
-                  disabled={!selectedSession || busy}
+                  disabled={demoMode || !selectedSession || busy}
                   onClick={openEtcdTransaction}
                   title="etcd 原子批量事务"
                 >
@@ -2373,7 +2509,7 @@ export function App() {
               {selectedProfile?.adapter === "nacos" && (
                 <button
                   className="icon-button transaction-resource"
-                  disabled={!selectedSession || busy}
+                  disabled={demoMode || !selectedSession || busy}
                   onClick={() => setNacosNativeOpen(true)}
                   title="Nacos 命名空间、服务与实例管理"
                 >
@@ -2382,7 +2518,7 @@ export function App() {
               )}
               <button
                 className="icon-button create-resource"
-                disabled={!selectedSession || busy}
+                disabled={demoMode || !selectedSession || busy}
                 onClick={openCreateResource}
                 title="新建资源"
               >
@@ -2595,7 +2731,7 @@ export function App() {
             )}
             {busy && (
               <div className="loading-line">
-                正在与注册中心通信…{" "}
+                {demoMode ? "正在加载合成数据…" : "正在与注册中心通信…"}{" "}
                 {activeOperation && (
                   <button onClick={() => void cancelActiveOperation()}>
                     取消
@@ -2644,7 +2780,7 @@ export function App() {
                   {document.address.type === "nacosConfig" && (
                     <button
                       className="button"
-                      disabled={busy}
+                      disabled={demoMode || busy}
                       onClick={openServerHistory}
                     >
                       服务端历史
@@ -2653,7 +2789,7 @@ export function App() {
                   {document.address.type === "nacosConfig" && (
                     <button
                       className="button"
-                      disabled={busy}
+                      disabled={demoMode || busy}
                       onClick={() => setNacosNativeOpen(true)}
                     >
                       服务管理
@@ -2679,14 +2815,14 @@ export function App() {
                   )}
                   <button
                     className="button"
-                    disabled={busy}
+                    disabled={demoMode || busy}
                     onClick={openExportDialog}
                   >
                     导出
                   </button>
                   <button
                     className="button danger"
-                    disabled={busy || !document.version}
+                    disabled={demoMode || busy || !document.version}
                     onClick={prepareDelete}
                   >
                     删除
@@ -2694,6 +2830,7 @@ export function App() {
                   <button
                     className="button primary"
                     disabled={
+                      demoMode ||
                       busy ||
                       !document.version ||
                       draftValue === document.value.content
@@ -2755,7 +2892,7 @@ export function App() {
                   )}
                   <button
                     className="button"
-                    disabled={busy}
+                    disabled={demoMode || busy}
                     onClick={() =>
                       void (watchBackendIsActive
                         ? stopResourceWatch()
@@ -2813,7 +2950,7 @@ export function App() {
               <ConfigEditor
                 ref={editorRef}
                 value={draftValue}
-                disabled={busy}
+                disabled={demoMode || busy}
                 language={editorLanguage}
                 onChange={(value) => {
                   setDraftValue(value);
@@ -2841,7 +2978,7 @@ export function App() {
 
       {toast && <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />}
 
-      {settingsOpen && (
+      {!demoMode && settingsOpen && (
         <SettingsDialog
           settings={updateProxySettings}
           onSave={(settings) => {
@@ -2854,7 +2991,7 @@ export function App() {
         />
       )}
 
-      {availableUpdate && (
+      {!demoMode && availableUpdate && (
         <UpdateDialog
           update={availableUpdate}
           installing={installingUpdate}
@@ -2864,7 +3001,7 @@ export function App() {
         />
       )}
 
-      {dialogOpen && (
+      {!demoMode && dialogOpen && (
         <ConnectionDialog
           mode={dialogMode}
           form={form}
@@ -2881,7 +3018,7 @@ export function App() {
         />
       )}
 
-      {createDialogOpen && selectedProfile && (
+      {!demoMode && createDialogOpen && selectedProfile && (
         <NewResourceDialog
           adapter={selectedProfile.adapter}
           draft={resourceDraft}
@@ -2891,7 +3028,7 @@ export function App() {
         />
       )}
 
-      {pendingMutation && selectedProfile && (
+      {!demoMode && pendingMutation && selectedProfile && (
         <MutationConfirmationDialog
           mutation={pendingMutation}
           profile={selectedProfile}
@@ -2904,34 +3041,40 @@ export function App() {
         />
       )}
 
-      {pendingZookeeperAction && selectedProfile?.adapter === "zookeeper" && (
-        <ZookeeperCreateConfirmationDialog
-          profile={selectedProfile}
-          action={pendingZookeeperAction}
-          confirmation={zookeeperConfirmation}
-          busy={busy}
-          onConfirmationChange={setZookeeperConfirmation}
-          onConfirm={() => void executeZookeeperAction(pendingZookeeperAction)}
-          onCancelOperation={() => void cancelActiveOperation()}
-          onClose={() => setPendingZookeeperAction(undefined)}
-        />
-      )}
+      {!demoMode &&
+        pendingZookeeperAction &&
+        selectedProfile?.adapter === "zookeeper" && (
+          <ZookeeperCreateConfirmationDialog
+            profile={selectedProfile}
+            action={pendingZookeeperAction}
+            confirmation={zookeeperConfirmation}
+            busy={busy}
+            onConfirmationChange={setZookeeperConfirmation}
+            onConfirm={() =>
+              void executeZookeeperAction(pendingZookeeperAction)
+            }
+            onCancelOperation={() => void cancelActiveOperation()}
+            onClose={() => setPendingZookeeperAction(undefined)}
+          />
+        )}
 
-      {etcdTransactionOpen && selectedProfile?.adapter === "etcd" && (
-        <EtcdTransactionDialog
-          profile={selectedProfile}
-          items={etcdTransactionItems}
-          confirmationText={etcdTransactionConfirmation}
-          busy={busy}
-          onItemsChange={setEtcdTransactionItems}
-          onConfirmationTextChange={setEtcdTransactionConfirmation}
-          onCancel={() => setEtcdTransactionOpen(false)}
-          onExecute={() => void executeTransaction()}
-          onCancelOperation={() => void cancelActiveOperation()}
-        />
-      )}
+      {!demoMode &&
+        etcdTransactionOpen &&
+        selectedProfile?.adapter === "etcd" && (
+          <EtcdTransactionDialog
+            profile={selectedProfile}
+            items={etcdTransactionItems}
+            confirmationText={etcdTransactionConfirmation}
+            busy={busy}
+            onItemsChange={setEtcdTransactionItems}
+            onConfirmationTextChange={setEtcdTransactionConfirmation}
+            onCancel={() => setEtcdTransactionOpen(false)}
+            onExecute={() => void executeTransaction()}
+            onCancelOperation={() => void cancelActiveOperation()}
+          />
+        )}
 
-      {exportDialogOpen && document && (
+      {!demoMode && exportDialogOpen && document && (
         <ExportDialog
           document={document}
           includeValue={exportIncludeValue}
@@ -2942,7 +3085,7 @@ export function App() {
         />
       )}
 
-      {importPreview && selectedProfile && (
+      {!demoMode && importPreview && selectedProfile && (
         <ImportPreviewDialog
           preview={importPreview}
           profile={selectedProfile}
@@ -2955,7 +3098,7 @@ export function App() {
         />
       )}
 
-      {historyOpen && (
+      {!demoMode && historyOpen && (
         <HistoryDialog
           profiles={profiles}
           scope={historyScope}
@@ -2968,7 +3111,7 @@ export function App() {
         />
       )}
 
-      {serverHistoryOpen && serverHistoryAddress && (
+      {!demoMode && serverHistoryOpen && serverHistoryAddress && (
         <NacosHistoryDialog
           resourceName={document?.name ?? "Nacos 配置"}
           items={serverHistoryItems}
@@ -2989,7 +3132,8 @@ export function App() {
         />
       )}
 
-      {nacosNativeOpen &&
+      {!demoMode &&
+        nacosNativeOpen &&
         selectedProfile?.adapter === "nacos" &&
         selectedSession && (
           <NacosNativeDialog
@@ -3000,7 +3144,21 @@ export function App() {
           />
         )}
 
-      {nativeInfoOpen &&
+      {demoMode && nativeInfoOpen && selectedProfile && (
+        <NativeInfoDialog
+          adapter={selectedProfile.adapter}
+          info={nativeInfo}
+          loading={nativeInfoLoading}
+          onCancelOperation={() => void cancelActiveOperation()}
+          onClose={() => {
+            setNativeInfoOpen(false);
+            setNativeInfo(undefined);
+          }}
+        />
+      )}
+
+      {!demoMode &&
+        nativeInfoOpen &&
         selectedProfile?.adapter === "etcd" &&
         document?.address.type === "etcd" && (
           <EtcdLeaseDialog
@@ -3021,7 +3179,8 @@ export function App() {
           />
         )}
 
-      {nativeInfoOpen &&
+      {!demoMode &&
+        nativeInfoOpen &&
         selectedProfile?.adapter === "zookeeper" &&
         document?.address.type === "zookeeper" && (
           <ZookeeperAclDialog

@@ -75,6 +75,24 @@ html[data-platform="macos"] .topbar {
   font-size: 10px;
   letter-spacing: 0.08em;
 }
+.demo-badge {
+  padding: 4px 9px;
+  border: 1px solid #8a6a35;
+  border-radius: 20px;
+  color: #ffd27a;
+  background: #2b2112;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.demo-button {
+  border-color: #3a655f;
+  color: #7fe9d3;
+}
+.app[data-workspace-mode="demo"] .connection.active {
+  border-color: #8a6a35;
+  box-shadow: inset 3px 0 #ffd27a;
+}
 .top-spacer {
   flex: 1;
 }

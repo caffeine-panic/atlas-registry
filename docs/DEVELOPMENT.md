@@ -10,6 +10,18 @@ npm run tauri build -- --no-bundle
 
 `etcd-client` 在构建时需要 `protoc`。如果它不在 `PATH`，可显式设置 `PROTOC=/path/to/protoc`。
 
+## 合成演示与仓库截图
+
+标题栏的“演示”入口会切换到内置只读数据源，同时展示 etcd、ZooKeeper 和 Nacos。该数据源不调用 Tauri IPC，不发起网络请求，不读写浏览器存储，也不会载入本机连接配置；所有 endpoint 都使用保留的 `.demo.invalid` 域名。写入、监听、导入导出、诊断和设置入口在演示状态下不可用。
+
+浏览器开发模式可通过 `http://127.0.0.1:1420/?demo=1` 确定性进入演示。生成 README 使用的 1440×900 截图：
+
+```bash
+npm run screenshot:demo
+```
+
+脚本会先执行生产构建，再启动本机 Vite preview，并通过 Chrome DevTools 协议等待 `[data-demo-ready="true"]` 后截图到 `docs/assets/atlas-registry-demo.png`。系统需要 Chrome、Chromium 或 Edge；非默认安装位置可通过 `ATLAS_DEMO_BROWSER=/path/to/browser` 指定。传入首个位置参数可以覆盖输出路径。
+
 ## 真实服务契约
 
 默认测试套件不会假装存在本地注册中心。准备测试集群后，通过 ignored tests 验证连接、会话和根资源浏览：
