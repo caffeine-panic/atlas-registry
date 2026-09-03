@@ -1174,6 +1174,192 @@ html[data-platform="macos"] .topbar {
   display: inline;
   color: #ffb2b7;
 }
+.safe-change-dialog {
+  width: min(1180px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+.safe-change-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.75fr);
+  gap: 14px;
+}
+.safe-change-main,
+.safe-change-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+.safe-change-section {
+  padding: 14px;
+  border: 1px solid #263447;
+  border-radius: 11px;
+  background: #0b121c;
+}
+.safe-change-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #d7e2ee;
+}
+.safe-change-section-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-index {
+  color: #55d6be;
+  font:
+    700 10px/1 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.environment-pill,
+.safe-change-phase {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #a9b7c8;
+  background: #172231;
+  font-size: 10px;
+  font-weight: 800;
+}
+.environment-pill.production,
+.safe-change-phase.outcomeUnknown,
+.safe-change-phase.auditIncomplete {
+  color: #ffd28a;
+  background: #332719;
+}
+.environment-pill.staging,
+.safe-change-phase.ready,
+.safe-change-phase.applied {
+  color: #7fe9d3;
+  background: #123027;
+}
+.safe-change-phase.conflict,
+.safe-change-phase.failed {
+  color: #ffb2b7;
+  background: #321a20;
+}
+.safe-change-target {
+  grid-template-columns: 110px minmax(0, 1fr);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.safe-change-address {
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+.diff-summary {
+  display: flex;
+  gap: 8px;
+  font: 700 11px/1 monospace;
+}
+.diff-summary i {
+  color: #7fe9d3;
+  font-style: normal;
+}
+.diff-summary em {
+  color: #ff9ca5;
+  font-style: normal;
+}
+.safe-change-diff {
+  max-height: min(420px, calc(100vh - 360px));
+  overflow: auto;
+  border: 1px solid #223043;
+  border-radius: 8px;
+  background: #081019;
+  font:
+    11px/1.55 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: 24px 42px 42px minmax(0, 1fr);
+  min-width: max-content;
+  border-bottom: 1px solid #101b28;
+}
+.diff-line:last-child {
+  border-bottom: 0;
+}
+.diff-line.add {
+  background: #0f291f;
+}
+.diff-line.remove {
+  background: #2b171c;
+}
+.diff-marker,
+.diff-number {
+  padding: 2px 7px;
+  color: #607288;
+  text-align: right;
+  user-select: none;
+}
+.diff-line.add .diff-marker {
+  color: #7fe9d3;
+}
+.diff-line.remove .diff-marker {
+  color: #ff9ca5;
+}
+.diff-line code {
+  padding: 2px 10px;
+  color: #bdcad8;
+  white-space: pre-wrap;
+}
+.safe-change-status {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #314057;
+  border-radius: 9px;
+  color: #a9b7c8;
+  background: #101a27;
+  line-height: 1.5;
+}
+.safe-change-status b {
+  color: #d7e2ee;
+}
+.safe-change-status small {
+  color: #8394a9;
+}
+.safe-change-status.ready,
+.safe-change-status.applied {
+  border-color: #285d50;
+  background: #10231f;
+}
+.safe-change-status.conflict,
+.safe-change-status.failed {
+  border-color: #713b46;
+  background: #25151a;
+}
+.safe-change-status.outcomeUnknown,
+.safe-change-status.auditIncomplete {
+  border-color: #725b34;
+  background: #211c13;
+}
+.safe-change-confirmation {
+  margin: 0;
+}
+.receipt-section .safe-change-section-heading .button {
+  padding: 5px 9px;
+  font-size: 10px;
+}
+.dialog .safe-change-receipt {
+  min-height: 210px;
+  margin: 0;
+  resize: vertical;
+  color: #9fb2c8;
+  background: #07101a;
+  font:
+    10px/1.55 "SFMono-Regular",
+    Consolas,
+    monospace;
+}
+.safe-change-actions {
+  margin-top: 16px;
+}
 .etcd-transaction-dialog {
   width: min(920px, 100%);
   max-height: calc(100vh - 48px);
@@ -1780,5 +1966,11 @@ html[data-platform="macos"] .topbar {
   }
   .transaction-operation-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  .safe-change-layout {
+    grid-template-columns: 1fr;
+  }
+  .safe-change-diff {
+    max-height: 320px;
   }
 }

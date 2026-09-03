@@ -62,6 +62,7 @@ import { HistoryDialog } from "./HistoryDialog";
 import { NacosHistoryDialog } from "./NacosHistoryDialog";
 import { NacosNativeDialog } from "./NacosNativeDialog";
 import { NativeInfoDialog } from "./NativeInfoDialog";
+import { SafeChangeDialog } from "./SafeChangeDialog";
 import { EtcdLeaseDialog } from "./EtcdLeaseDialog";
 import {
   ZookeeperAclDialog,
@@ -128,6 +129,18 @@ import {
   type WorkspaceMode,
 } from "./demoWorkspace";
 import { createWorkspaceSource } from "./workspaceSource";
+import {
+  applySafeChange,
+  buildSafeChangeReceipt,
+  createSafeChangePlan,
+  failedSafeChangeOutcome,
+  initialSafeChangeState,
+  preflightConflictOutcome,
+  preflightSafeChange,
+  reduceSafeChange,
+  serializeSafeChangeReceipt,
+  type SafeChangeState,
+} from "./safeChange";
 
 type WatchChangeEvent = Extract<WatchEvent, { kind: "change" }>;
 
@@ -380,6 +393,9 @@ export function App() {
   );
   const [pendingMutation, setPendingMutation] = useState<ResourceMutation>();
   const [confirmationText, setConfirmationText] = useState("");
+  const [safeChange, setSafeChange] = useState<SafeChangeState>();
+  const [safeChangeConfirmation, setSafeChangeConfirmation] = useState("");
+  const [safeChangeReceiptCopied, setSafeChangeReceiptCopied] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportIncludeValue, setExportIncludeValue] = useState(false);
   const [importPreview, setImportPreview] = useState<ImportPreview>();
@@ -768,6 +784,7 @@ export function App() {
     setDialogOpen(false);
     setCreateDialogOpen(false);
     setPendingMutation(undefined);
+    setSafeChange(undefined);
     setPendingZookeeperAction(undefined);
     setEtcdTransactionOpen(false);
     setExportDialogOpen(false);
@@ -1483,7 +1500,7 @@ export function App() {
   };
 
   const prepareUpdate = () => {
-    if (!document?.version) {
+    if (!selectedProfile || !selectedSession || !document?.version) {
       showErrorText("当前资源没有可用于条件更新的版本，请先刷新");
       return;
     }
@@ -1492,14 +1509,126 @@ export function App() {
       showValidationFailure(validation.issue, "保存");
       if (!globalThis.confirm("语法校验失败，是否仍然保存该内容？")) return;
     }
-    setPendingMutation({
-      operation: "update",
-      address: document.address,
-      value: { content: draftValue, encoding: document.value.encoding },
-      contentType: document.contentType,
-      expectedVersion: document.version,
-    });
-    setConfirmationText("");
+    try {
+      setSafeChange(
+        initialSafeChangeState(
+          createSafeChangePlan(
+            selectedProfile,
+            document,
+            draftValue,
+            newConnectionId(),
+          ),
+        ),
+      );
+      setSafeChangeConfirmation("");
+      setSafeChangeReceiptCopied(false);
+    } catch (reason) {
+      showError(reason);
+    }
+  };
+
+  const runSafeChangePreflight = async () => {
+    if (!safeChange || busy) return;
+    const plan = safeChange.plan;
+    setSafeChange((current) =>
+      current ? reduceSafeChange(current, { type: "startPreflight" }) : current,
+    );
+    setSafeChangeConfirmation("");
+    setSafeChangeReceiptCopied(false);
+    setBusy(true);
+    clearToast();
+    try {
+      const preflight = await preflightSafeChange(
+        plan,
+        (connectionId, address) => runRead(connectionId, address),
+      );
+      if (preflight.kind === "ready") {
+        setSafeChange((current) =>
+          current
+            ? reduceSafeChange(current, { type: "preflightReady", preflight })
+            : current,
+        );
+      } else {
+        const outcome = preflightConflictOutcome(preflight);
+        const receipt = buildSafeChangeReceipt(plan, preflight, outcome);
+        setSafeChange((current) =>
+          current
+            ? reduceSafeChange(current, {
+                type: "complete",
+                preflight,
+                outcome,
+                receipt,
+              })
+            : current,
+        );
+      }
+    } catch (reason) {
+      const outcome = failedSafeChangeOutcome(reason);
+      const receipt = buildSafeChangeReceipt(plan, undefined, outcome);
+      setSafeChange((current) =>
+        current
+          ? reduceSafeChange(current, { type: "complete", outcome, receipt })
+          : current,
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const executeSafeChange = async () => {
+    if (
+      !safeChange ||
+      safeChange.phase !== "ready" ||
+      safeChange.preflight?.kind !== "ready" ||
+      safeChangeConfirmation !== safeChange.plan.connectionName ||
+      busy
+    )
+      return;
+    const plan = safeChange.plan;
+    const preflight = safeChange.preflight;
+    setSafeChange((current) =>
+      current ? reduceSafeChange(current, { type: "startApply" }) : current,
+    );
+    setBusy(true);
+    clearToast();
+    const outcome = await applySafeChange(
+      plan,
+      async (mutation) => {
+        const operationId = startOperation();
+        try {
+          return await mutateResource(plan.connectionId, mutation, operationId);
+        } finally {
+          finishOperation(operationId);
+        }
+      },
+      (connectionId, address) => runRead(connectionId, address),
+    );
+    if ("authoritative" in outcome && outcome.authoritative) {
+      showDocument(outcome.authoritative);
+      setSelectedAddress(outcome.authoritative.address);
+      setResourceWatch((current) =>
+        current ? { ...current, remoteChanged: false } : current,
+      );
+    }
+    const receipt = buildSafeChangeReceipt(plan, preflight, outcome);
+    setSafeChange((current) =>
+      current
+        ? reduceSafeChange(current, { type: "complete", outcome, receipt })
+        : current,
+    );
+    setBusy(false);
+  };
+
+  const copySafeChangeReceipt = async () => {
+    if (!safeChange?.receipt) return;
+    try {
+      await globalThis.navigator.clipboard.writeText(
+        serializeSafeChangeReceipt(safeChange.receipt),
+      );
+      setSafeChangeReceiptCopied(true);
+    } catch {
+      showInfo("系统剪贴板不可用；请点入收据文本后手动复制");
+    }
   };
 
   const prepareDelete = () => {
@@ -2837,7 +2966,7 @@ export function App() {
                     }
                     onClick={prepareUpdate}
                   >
-                    保存变更
+                    安全变更
                   </button>
                 </div>
               </div>
@@ -3038,6 +3167,20 @@ export function App() {
           onCancel={() => setPendingMutation(undefined)}
           onConfirm={() => void executeMutation()}
           onCancelOperation={() => void cancelActiveOperation()}
+        />
+      )}
+
+      {!demoMode && safeChange && (
+        <SafeChangeDialog
+          state={safeChange}
+          confirmationText={safeChangeConfirmation}
+          receiptCopied={safeChangeReceiptCopied}
+          onConfirmationTextChange={setSafeChangeConfirmation}
+          onPreflight={() => void runSafeChangePreflight()}
+          onApply={() => void executeSafeChange()}
+          onCancelOperation={() => void cancelActiveOperation()}
+          onCopyReceipt={() => void copySafeChangeReceipt()}
+          onClose={() => setSafeChange(undefined)}
         />
       )}
 
