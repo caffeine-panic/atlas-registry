@@ -1230,4 +1230,20 @@ mod tests {
         assert_eq!(error.code, RegistryErrorCode::PermissionDenied);
         assert!(!error.retryable);
     }
+
+    #[test]
+    fn guarded_updates_reject_stale_protocol_concurrency_tokens() {
+        assert!(ensure_version(42, 42, "etcd mod revision").is_ok());
+        assert!(ensure_version(7, 7, "ZooKeeper version").is_ok());
+        assert!(ensure_text_version("current-md5", "current-md5", "Nacos MD5").is_ok());
+
+        for error in [
+            ensure_version(41, 42, "etcd mod revision").unwrap_err(),
+            ensure_version(6, 7, "ZooKeeper version").unwrap_err(),
+            ensure_text_version("stale-md5", "current-md5", "Nacos MD5").unwrap_err(),
+        ] {
+            assert_eq!(error.code, RegistryErrorCode::Conflict);
+            assert!(!error.retryable);
+        }
+    }
 }
