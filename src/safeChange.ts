@@ -3,6 +3,7 @@ import type {
   ConnectionEnvironment,
   ConnectionProfile,
   MutationResult,
+  MutationValue,
   ResourceAddress,
   ResourceDocument,
   ResourceMutation,
@@ -139,6 +140,22 @@ export function createSafeChangePlan(
   afterContent: string,
   workflowId: string,
 ): SafeChangePlan {
+  return createSafeChangePlanFromValue(
+    profile,
+    document,
+    { content: afterContent, encoding: document.value.encoding },
+    workflowId,
+    document.contentType,
+  );
+}
+
+export function createSafeChangePlanFromValue(
+  profile: ConnectionProfile,
+  document: ResourceDocument,
+  afterValue: MutationValue,
+  workflowId: string,
+  contentType?: string,
+): SafeChangePlan {
   if (!document.version?.trim())
     throw new Error("安全变更需要当前资源的并发版本");
   return {
@@ -154,8 +171,8 @@ export function createSafeChangePlan(
     after: {
       operation: "update",
       address: document.address,
-      value: { content: afterContent, encoding: document.value.encoding },
-      contentType: document.contentType,
+      value: { content: afterValue.content, encoding: afterValue.encoding },
+      contentType,
       expectedVersion: document.version,
     },
   };

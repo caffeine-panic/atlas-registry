@@ -44,7 +44,7 @@ flowchart LR
 
 四层分工，新代码必须遵守：
 
-1. **纯函数状态与工作流模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/safeChange.ts`、`src/productionLock.ts`、`src/nacosPaging.ts`、`src/configLanguage.ts`、`src/configValidation.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React；IO 通过窄函数参数注入，承载全部可测试的状态转换和工作流编排；`scripts/*.test.mjs` 直接导入或转译并断言这些模块。
+1. **纯函数状态与工作流模块**（`src/resourceTree.ts`、`src/resourceWorkspaceState.ts`、`src/safeChange.ts`、`src/resourceCompare.ts`、`src/productionLock.ts`、`src/nacosPaging.ts`、`src/configLanguage.ts`、`src/configValidation.ts`、`src/operationTracker.ts`、`src/profileSelection.ts`、`src/registryError.ts`、`src/updateSettings.ts`）：不依赖 React；IO 通过窄函数参数注入，承载全部可测试的状态转换和工作流编排；`scripts/*.test.mjs` 直接导入或转译并断言这些模块。
 2. **工作区数据源层**（`src/workspaceSource.ts`、`src/demoWorkspace.ts`）：为 profile/session bootstrap、浏览、读取、搜索和原生只读信息提供同一接口。live 实现适配 `registry.ts`，demo 实现只使用内置合成数据，不得导入 registry runtime、访问网络或浏览器存储，也不承载 mutation。
 3. **Hook 组合层**（`src/useResourceWorkspace.ts`、`src/useRegistryOperations.ts`）：把纯函数模块与 IPC 调用、取消、乐观状态接到 React 上。
 4. **组件层**（`src/App.tsx` 与各 `*Dialog.tsx`）：渲染与事件接线，不写业务规则。
@@ -58,6 +58,8 @@ flowchart LR
 现有资源更新统一由 `safeChange.ts` 编排：先通过 `read_resource` 做权威预检，再由用户审阅最多 200 行 / 32K 字符的 Before/After Diff 并输入连接名，随后恰好调用一次 `mutate_resource`。Rust 仍在提交临界区再次读取并比较 etcd revision、ZooKeeper version 或 Nacos MD5；调用成功后前端再次 `read_resource`，展示权威版本。冲突、`outcomeUnknown`、`auditIncomplete` 分别保持独立终态，不会把回读当成自动重试。收据只选择地址、环境、协议令牌、SHA-256、大小、编码和恢复建议，不序列化资源正文、连接 endpoint 或错误原文。
 
 生产 profile 打开后默认只读。`RegistryService` 为每个已连接会话维护不持久化的写入权限：解锁必须精确匹配连接名且限定 60–3600 秒，审计事件同步落盘后才开放窗口；断开、进程重启或单调时钟到期都会失效。UI 每秒显示剩余时间并在到期时关闭待确认写入，Rust 在所有通用与协议原生 mutation 的 dispatch 临界点再次检查，结构化返回 `productionLocked`，因此前端时钟漂移或到期竞争不能越过保护。
+
+跨环境比较以当前精确资源为目标，只允许从另一个已连接的同协议 profile 读取相同 `ResourceAddress`；不做协议映射、不枚举目录。`resourceCompare.ts` 按字节区分 equal / different / binary，并将 missing、oversized、unauthorized、cancelled 和 stale 保持为独立终态。提升前顺序刷新来源与目标，任一版本或内容变化即停止；通过后用来源的原始编码与 content type、目标的最新并发令牌创建普通 `SafeChangePlan`，后续仍执行权威预检、单次条件提交、回读与脱敏收据。比较文档只存活于 React 内存，不进入日志、URL 或持久化设置。
 
 ## IPC 契约
 
