@@ -1,5 +1,6 @@
 import type { RegistryError } from "./generated/RegistryError";
 import type { RegistryErrorCode } from "./generated/RegistryErrorCode";
+import type { AppLocale } from "./i18n";
 
 export type { RegistryError, RegistryErrorCode };
 
@@ -25,6 +26,31 @@ const registryErrorCodes = new Set<RegistryErrorCode>([
   "productionLocked",
 ]);
 
+const englishRegistryErrors: Record<RegistryErrorCode, string> = {
+  validation: "The request is invalid",
+  notConnected: "The registry connection is not open",
+  unsupported: "This operation is not supported by the selected adapter",
+  notFound: "The requested resource was not found",
+  network: "The registry could not be reached",
+  invalidResponse: "The registry returned an invalid response",
+  timeout: "The registry operation timed out",
+  valueTooLarge: "The resource exceeds the 1 MiB inline-value limit",
+  conflict: "The resource changed; refresh before continuing",
+  outcomeUnknown:
+    "The remote outcome is unknown; verify server state before retrying",
+  permissionDenied: "The registry denied this operation",
+  resourceExhausted: "The bounded resource limit was reached",
+  auditIncomplete:
+    "The remote operation completed, but local audit recording failed",
+  credentialMissing: "The required credential is missing",
+  credentialStore: "The operating system credential vault is unavailable",
+  tlsConfiguration: "The TLS configuration is invalid",
+  storage: "Local application storage is unavailable",
+  cancelled: "The operation was cancelled",
+  productionLocked:
+    "This production connection is read-only; open a time-limited write window first",
+};
+
 export function isRegistryError(
   reason: unknown,
   code?: RegistryErrorCode,
@@ -41,8 +67,14 @@ export function isRegistryError(
   );
 }
 
-export function registryErrorMessage(reason: unknown): string {
+export function registryErrorMessage(
+  reason: unknown,
+  locale: AppLocale = "zh-CN",
+): string {
   if (typeof reason === "string") return reason;
+  if (locale === "en" && isRegistryError(reason)) {
+    return englishRegistryErrors[reason.code];
+  }
   if (isRegistryError(reason, "productionLocked")) {
     return "生产连接当前为只读；请在顶部限时解锁后重新确认操作";
   }

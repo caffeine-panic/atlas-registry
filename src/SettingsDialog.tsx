@@ -3,19 +3,25 @@ import {
   normalizeUpdateProxySettings,
   type UpdateProxySettings,
 } from "./updateSettings";
+import type { AppLocale, Translator } from "./i18n";
 
 type SettingsDialogProps = {
   settings: UpdateProxySettings;
-  onSave: (settings: UpdateProxySettings) => void;
+  locale: AppLocale;
+  t: Translator;
+  onSave: (settings: UpdateProxySettings, locale: AppLocale) => void;
   onCancel: () => void;
 };
 
 export function SettingsDialog({
   settings,
+  locale,
+  t,
   onSave,
   onCancel,
 }: SettingsDialogProps) {
   const [draft, setDraft] = useState<UpdateProxySettings>(settings);
+  const [draftLocale, setDraftLocale] = useState(locale);
   const [manualUrl, setManualUrl] = useState(
     settings.mode === "manual" ? settings.url : "",
   );
@@ -32,6 +38,7 @@ export function SettingsDialog({
         normalizeUpdateProxySettings(
           draft.mode === "manual" ? { mode: "manual", url: manualUrl } : draft,
         ),
+        draftLocale,
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -47,7 +54,7 @@ export function SettingsDialog({
         <div className="dialog-heading">
           <div>
             <span className="eyebrow">APPLICATION SETTINGS</span>
-            <h2>设置</h2>
+            <h2>{t("settings.title")}</h2>
           </div>
           <button className="icon-button" onClick={onCancel}>
             ×
@@ -55,7 +62,26 @@ export function SettingsDialog({
         </div>
 
         <div className="form-section">
-          <div className="form-section-title">应用更新网络</div>
+          <div className="form-section-title">{t("settings.language")}</div>
+          <label>
+            {t("settings.language")}
+            <select
+              value={draftLocale}
+              onChange={(event) =>
+                setDraftLocale(event.target.value as AppLocale)
+              }
+            >
+              <option value="en">{t("settings.english")}</option>
+              <option value="zh-CN">{t("settings.chinese")}</option>
+            </select>
+          </label>
+          <p className="form-note">{t("settings.languageHelp")}</p>
+        </div>
+
+        <div className="form-section">
+          <div className="form-section-title">
+            {t("settings.updateNetwork")}
+          </div>
           <div className="proxy-options">
             <label className={draft.mode === "system" ? "selected" : ""}>
               <input
@@ -64,11 +90,8 @@ export function SettingsDialog({
                 onChange={() => selectMode("system")}
               />
               <span>
-                <b>跟随系统代理</b>
-                <small>
-                  macOS 和 Windows 读取系统 HTTP/HTTPS 代理；Linux
-                  读取代理环境变量。
-                </small>
+                <b>{t("settings.systemProxy")}</b>
+                <small>{t("settings.systemProxyHelp")}</small>
               </span>
             </label>
             <label className={draft.mode === "manual" ? "selected" : ""}>
@@ -78,8 +101,8 @@ export function SettingsDialog({
                 onChange={() => selectMode("manual")}
               />
               <span>
-                <b>手动设置</b>
-                <small>只用于检查和下载 Atlas Registry 更新。</small>
+                <b>{t("settings.manualProxy")}</b>
+                <small>{t("settings.manualProxyHelp")}</small>
               </span>
             </label>
             {draft.mode === "manual" && (
@@ -102,8 +125,8 @@ export function SettingsDialog({
                 onChange={() => selectMode("disabled")}
               />
               <span>
-                <b>不使用代理</b>
-                <small>更新请求始终直连，忽略系统代理和代理环境变量。</small>
+                <b>{t("settings.noProxy")}</b>
+                <small>{t("settings.noProxyHelp")}</small>
               </span>
             </label>
           </div>
@@ -112,10 +135,10 @@ export function SettingsDialog({
 
         <div className="dialog-actions">
           <button className="button" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="button primary" onClick={save}>
-            保存设置
+            {t("common.saveSettings")}
           </button>
         </div>
       </section>

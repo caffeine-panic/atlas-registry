@@ -145,18 +145,18 @@ test("successful notices fade after four seconds and pause while interactive", (
 });
 
 test("connection success uses the typed dismissing notice path", () => {
-  assert.match(appSource, /showSuccess\("连接已断开"\)/);
+  assert.match(appSource, /showSuccess\(t\("connection\.disconnected"\)\)/);
   assert.match(appSource, /<Toast\s+key=\{toast\.id\}/);
   assert.doesNotMatch(appSource, /<button\s+className="toast"/);
 });
 
 test("every application notice declares its lifecycle explicitly", () => {
   assert.doesNotMatch(appSource, /\bsetMessage\(/);
-  assert.match(appSource, /showSuccess\(`已连接 \$\{session\.endpoint\}`\)/);
+  assert.match(appSource, /t\("connection\.connected",/);
   assert.match(appSource, /showError\(reason\)/);
   assert.match(
     appSource,
-    /showWarning\(`变更已成功，但刷新失败：\$\{errorMessage\(reason\)\}`\)/,
+    /showWarning\(`变更已成功，但刷新失败：\$\{errorMessage\(reason, locale\)\}`\)/,
   );
 });
 

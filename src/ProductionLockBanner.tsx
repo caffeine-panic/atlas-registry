@@ -1,11 +1,13 @@
 import { useState } from "react";
 import type { ConnectionProfile, ProductionLockStatus } from "./registry";
 import { formatUnlockRemaining } from "./productionLock";
+import type { Translator } from "./i18n";
 
 type Props = {
   profile: ConnectionProfile;
   status: ProductionLockStatus;
   busy: boolean;
+  t: Translator;
   onUnlock: (confirmation: string, durationSeconds: number) => Promise<void>;
   onLock: () => Promise<void>;
 };
@@ -16,6 +18,7 @@ export function ProductionLockBanner({
   profile,
   status,
   busy,
+  t,
   onUnlock,
   onLock,
 }: Props) {
@@ -31,11 +34,13 @@ export function ProductionLockBanner({
         aria-live="polite"
       >
         <div>
-          <b>{locked ? "生产环境只读锁已启用" : "生产写入窗口已开启"}</b>
+          <b>{locked ? t("production.locked") : t("production.unlocked")}</b>
           <span>
             {locked
-              ? `${profile.name} 的所有通用与协议原生写入都会在发送前拒绝。`
-              : `剩余 ${formatUnlockRemaining(status.remainingSeconds)}；到期立即恢复只读。`}
+              ? t("production.blocked", { name: profile.name })
+              : t("production.remaining", {
+                  remaining: formatUnlockRemaining(status.remainingSeconds),
+                })}
           </span>
         </div>
         {locked ? (
@@ -44,7 +49,7 @@ export function ProductionLockBanner({
             disabled={busy}
             onClick={() => setDialogOpen(true)}
           >
-            限时解锁
+            {t("production.unlock")}
           </button>
         ) : (
           <button
@@ -52,7 +57,7 @@ export function ProductionLockBanner({
             disabled={busy}
             onClick={() => void onLock()}
           >
-            立即恢复只读
+            {t("production.lockNow")}
           </button>
         )}
       </section>
@@ -71,7 +76,7 @@ export function ProductionLockBanner({
             <div className="dialog-heading">
               <div>
                 <span className="eyebrow">PRODUCTION WRITE WINDOW</span>
-                <h2>限时解锁生产写入</h2>
+                <h2>{t("production.unlockTitle")}</h2>
               </div>
               <button
                 className="icon-button"
@@ -82,10 +87,10 @@ export function ProductionLockBanner({
               </button>
             </div>
             <div className="mutation-warning danger-warning">
-              解锁只对当前桌面会话生效，不写入连接配置。断开、关闭应用或倒计时结束都会恢复只读。
+              {t("production.unlockHelp")}
             </div>
             <label>
-              写入窗口
+              {t("production.duration")}
               <select
                 value={durationSeconds}
                 disabled={busy}
@@ -95,13 +100,13 @@ export function ProductionLockBanner({
               >
                 {durations.map((seconds) => (
                   <option value={seconds} key={seconds}>
-                    {seconds / 60} 分钟
+                    {t("production.minutes", { minutes: seconds / 60 })}
                   </option>
                 ))}
               </select>
             </label>
             <label className="production-confirmation">
-              输入精确连接名 <b>{profile.name}</b>
+              {t("production.confirmName", { name: profile.name })}
               <input
                 value={confirmation}
                 disabled={busy}
@@ -110,17 +115,14 @@ export function ProductionLockBanner({
                 onChange={(event) => setConfirmation(event.target.value)}
               />
             </label>
-            <p className="form-note">
-              审计仅记录连接 ID、操作 ID 与解锁时长，不记录 endpoint、凭据或资源
-              value。
-            </p>
+            <p className="form-note">{t("production.auditHelp")}</p>
             <div className="dialog-actions">
               <button
                 className="button"
                 disabled={busy}
                 onClick={() => setDialogOpen(false)}
               >
-                取消
+                {t("common.cancel")}
               </button>
               <button
                 className="button danger"
@@ -132,7 +134,9 @@ export function ProductionLockBanner({
                   })
                 }
               >
-                {busy ? "正在解锁…" : "确认限时解锁"}
+                {busy
+                  ? t("production.unlocking")
+                  : t("production.confirmUnlock")}
               </button>
             </div>
           </section>

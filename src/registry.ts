@@ -790,8 +790,11 @@ export function stopWatch(subscriptionId: string) {
   return invoke<boolean>("stop_watch", { subscriptionId });
 }
 
-export function errorMessage(reason: unknown): string {
-  return registryErrorMessage(reason);
+export function errorMessage(
+  reason: unknown,
+  locale: import("./i18n").AppLocale = "zh-CN",
+): string {
+  return registryErrorMessage(reason, locale);
 }
 
 export function isCancelled(reason: unknown): boolean {

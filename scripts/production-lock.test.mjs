@@ -15,6 +15,10 @@ const bannerSource = readFileSync(
   new URL("../src/ProductionLockBanner.tsx", import.meta.url),
   "utf8",
 );
+const i18nSource = readFileSync(
+  new URL("../src/i18n.ts", import.meta.url),
+  "utf8",
+);
 const registryRustSource = readFileSync(
   new URL("../src-tauri/src/registry.rs", import.meta.url),
   "utf8",
@@ -80,7 +84,8 @@ test("the UI exposes an audited session-only lock and closes pending writes", ()
   assert.match(appSource, /if \(writeAllowed\) return;/);
   assert.match(appSource, /setPendingMutation\(undefined\)/);
   assert.match(appSource, /setEtcdTransactionOpen\(false\)/);
-  assert.match(bannerSource, /不写入连接配置/);
+  assert.match(bannerSource, /t\("production\.unlockHelp"\)/);
+  assert.match(i18nSource, /不写入连接配置/);
   assert.match(bannerSource, /confirmation !== profile\.name/);
   assert.match(bannerSource, /\[300, 900, 1_800, 3_600\]/);
 });

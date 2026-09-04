@@ -1,10 +1,6 @@
-import { connectionEnvironmentLabels } from "./registry";
-import {
-  authLabels,
-  authModes,
-  credentialIdentityLabel,
-  credentialSecretLabel,
-} from "./connectionAuth";
+import { authModes } from "./connectionAuth";
+import { connectionEnvironmentLabel } from "./i18n";
+import type { AppLocale, MessageKey, Translator } from "./i18n";
 import type {
   AdapterId,
   AuthenticationMode,
@@ -20,6 +16,8 @@ type ConnectionDialogProps = {
   secret: string;
   busy: boolean;
   testing: boolean;
+  locale: AppLocale;
+  t: Translator;
   onChange: (profile: ConnectionProfile) => void;
   onSecretChange: (secret: string) => void;
   onCancel: () => void;
@@ -35,10 +33,10 @@ const endpointDefaults: Record<AdapterId, string> = {
   nacos: "127.0.0.1:8848",
 };
 
-const endpointPlaceholders: Record<AdapterId, string> = {
-  etcd: "127.0.0.1:2379 或 etcd-1:2379,etcd-2:2379",
-  zookeeper: "127.0.0.1:2181 或 zk-1:2181,zk-2:2181/app",
-  nacos: "127.0.0.1:8848",
+const endpointPlaceholderKeys: Record<AdapterId, MessageKey | undefined> = {
+  etcd: "connection.endpointEtcd",
+  zookeeper: "connection.endpointZookeeper",
+  nacos: undefined,
 };
 
 export function ConnectionDialog({
@@ -47,6 +45,8 @@ export function ConnectionDialog({
   secret,
   busy,
   testing,
+  locale,
+  t,
   onChange,
   onSecretChange,
   onCancel,
@@ -58,7 +58,12 @@ export function ConnectionDialog({
   const authenticated = form.auth.mode !== "none";
   const supportsTls = form.adapter !== "nacos";
   const title =
-    mode === "edit" ? "编辑连接" : mode === "copy" ? "复制连接" : "新建连接";
+    mode === "edit"
+      ? t("connection.edit")
+      : mode === "copy"
+        ? t("connection.copy")
+        : t("connection.new");
+  const endpointPlaceholder = endpointPlaceholderKeys[form.adapter];
 
   const changeAdapter = (adapter: AdapterId) => {
     onSecretChange("");
@@ -109,7 +114,7 @@ export function ConnectionDialog({
 
         <div className="form-grid equal">
           <label>
-            类型
+            {t("connection.type")}
             <select
               value={form.adapter}
               onChange={(event) =>
@@ -122,7 +127,7 @@ export function ConnectionDialog({
             </select>
           </label>
           <label>
-            环境
+            {t("connection.environment")}
             <select
               value={form.environment}
               onChange={(event) =>
@@ -132,25 +137,31 @@ export function ConnectionDialog({
                 })
               }
             >
-              {Object.entries(connectionEnvironmentLabels).map(
-                ([value, label]) => (
-                  <option value={value} key={value}>
-                    {label}
-                  </option>
-                ),
-              )}
+              {(
+                [
+                  "unspecified",
+                  "development",
+                  "testing",
+                  "staging",
+                  "production",
+                ] as const
+              ).map((value) => (
+                <option value={value} key={value}>
+                  {connectionEnvironmentLabel(locale, value)}
+                </option>
+              ))}
             </select>
           </label>
         </div>
         <label>
-          名称
+          {t("connection.name")}
           <input
             autoFocus
             value={form.name}
             onChange={(event) =>
               onChange({ ...form, name: event.target.value })
             }
-            placeholder="例如：生产配置中心"
+            placeholder={t("connection.namePlaceholder")}
           />
         </label>
         <label>
@@ -160,7 +171,9 @@ export function ConnectionDialog({
             onChange={(event) =>
               onChange({ ...form, endpoint: event.target.value })
             }
-            placeholder={endpointPlaceholders[form.adapter]}
+            placeholder={
+              endpointPlaceholder ? t(endpointPlaceholder) : "127.0.0.1:8848"
+            }
           />
         </label>
 
@@ -195,9 +208,11 @@ export function ConnectionDialog({
         )}
 
         <div className="form-section">
-          <div className="form-section-title">认证</div>
+          <div className="form-section-title">
+            {t("connection.authentication")}
+          </div>
           <label>
-            认证方式
+            {t("connection.authMethod")}
             <select
               value={form.auth.mode}
               onChange={(event) =>
@@ -206,7 +221,7 @@ export function ConnectionDialog({
             >
               {authModes(form.adapter).map((mode) => (
                 <option value={mode} key={mode}>
-                  {authLabels[mode]}
+                  {authModeLabel(mode, t)}
                 </option>
               ))}
             </select>
@@ -214,7 +229,9 @@ export function ConnectionDialog({
           {authenticated && form.auth.mode !== "custom" && (
             <div className="form-grid equal">
               <label>
-                {credentialIdentityLabel(form.auth.mode)}
+                {form.auth.mode === "mseAccessKey"
+                  ? "AccessKey ID"
+                  : t("connection.username")}
                 <input
                   value={form.auth.username}
                   onChange={(event) =>
@@ -227,7 +244,11 @@ export function ConnectionDialog({
                 />
               </label>
               <label>
-                {credentialSecretLabel(form.auth.mode)}
+                {form.auth.mode === "digest"
+                  ? t("connection.digestPassword")
+                  : form.auth.mode === "mseAccessKey"
+                    ? "AccessKey Secret"
+                    : t("connection.password")}
                 <input
                   type="password"
                   value={secret}
@@ -236,9 +257,9 @@ export function ConnectionDialog({
                   placeholder={
                     mode === "edit"
                       ? form.auth.mode === "mseAccessKey"
-                        ? "留空表示保留原 AccessKey Secret"
-                        : "留空表示保留原密码"
-                      : "保存在系统凭据库"
+                        ? t("connection.keepAccessKey")
+                        : t("connection.keepPassword")
+                      : t("connection.storeInVault")
                   }
                 />
               </label>
@@ -247,7 +268,7 @@ export function ConnectionDialog({
           {form.auth.mode === "custom" && (
             <div className="form-grid equal">
               <label>
-                上下文键
+                {t("connection.customKey")}
                 <input
                   value={form.auth.customKey}
                   onChange={(event) =>
@@ -256,27 +277,26 @@ export function ConnectionDialog({
                       auth: { ...form.auth, customKey: event.target.value },
                     })
                   }
-                  placeholder="例如 accessToken"
+                  placeholder={t("connection.customKeyPlaceholder")}
                 />
               </label>
               <label>
-                上下文密钥
+                {t("connection.customSecret")}
                 <input
                   type="password"
                   value={secret}
                   onChange={(event) => onSecretChange(event.target.value)}
                   autoComplete="new-password"
                   placeholder={
-                    mode === "edit" ? "留空表示保留原密钥" : "保存在系统凭据库"
+                    mode === "edit"
+                      ? t("connection.keepSecret")
+                      : t("connection.storeInVault")
                   }
                 />
               </label>
             </div>
           )}
-          <p className="form-note">
-            密钥只通过一次性 Tauri IPC 进入
-            Rust，并存入操作系统凭据库；连接配置文件与 WebView 状态不保存密钥。
-          </p>
+          <p className="form-note">{t("connection.credentialHelp")}</p>
         </div>
 
         {supportsTls && (
@@ -292,12 +312,12 @@ export function ConnectionDialog({
                   })
                 }
               />
-              启用 TLS
+              {t("connection.enableTls")}
             </label>
             {form.tls.enabled && (
               <>
                 <label>
-                  CA 证书路径
+                  {t("connection.caPath")}
                   <input
                     value={form.tls.caCertificatePath}
                     onChange={(event) =>
@@ -311,14 +331,14 @@ export function ConnectionDialog({
                     }
                     placeholder={
                       form.adapter === "zookeeper"
-                        ? "/path/to/ca.pem（必填）"
-                        : "/path/to/ca.pem（留空使用系统根证书）"
+                        ? t("connection.caRequired")
+                        : t("connection.caSystem")
                     }
                   />
                 </label>
                 <div className="form-grid equal">
                   <label>
-                    客户端证书路径
+                    {t("connection.clientCertificate")}
                     <input
                       value={form.tls.clientCertificatePath}
                       onChange={(event) =>
@@ -330,11 +350,11 @@ export function ConnectionDialog({
                           },
                         })
                       }
-                      placeholder="可选，需与私钥同时配置"
+                      placeholder={t("connection.clientCertificateHelp")}
                     />
                   </label>
                   <label>
-                    客户端私钥路径
+                    {t("connection.clientKey")}
                     <input
                       value={form.tls.clientKeyPath}
                       onChange={(event) =>
@@ -346,7 +366,7 @@ export function ConnectionDialog({
                           },
                         })
                       }
-                      placeholder="可选；私钥内容只由 Rust 读取"
+                      placeholder={t("connection.clientKeyHelp")}
                     />
                   </label>
                 </div>
@@ -361,7 +381,7 @@ export function ConnectionDialog({
                           tls: { ...form.tls, serverName: event.target.value },
                         })
                       }
-                      placeholder="证书域名覆盖，可选"
+                      placeholder={t("connection.serverNameHelp")}
                     />
                   </label>
                 )}
@@ -372,7 +392,7 @@ export function ConnectionDialog({
 
         {form.environment === "production" && (
           <div className="mutation-warning">
-            该连接已标记为生产环境。资源写入仍会要求输入连接名并进行版本条件校验。
+            {t("connection.productionWarning")}
           </div>
         )}
         <div className="dialog-actions split-actions">
@@ -383,7 +403,7 @@ export function ConnectionDialog({
                 disabled={busy}
                 onClick={onDelete}
               >
-                删除连接
+                {t("connection.delete")}
               </button>
             )}
           </div>
@@ -392,17 +412,32 @@ export function ConnectionDialog({
               className="button"
               onClick={testing ? onCancelOperation : onCancel}
             >
-              {testing ? "取消测试" : "取消"}
+              {testing ? t("connection.cancelTest") : t("common.cancel")}
             </button>
             <button className="button" disabled={busy} onClick={onTest}>
-              测试连接
+              {t("connection.test")}
             </button>
             <button className="button primary" disabled={busy} onClick={onSave}>
-              保存并连接
+              {t("connection.saveAndConnect")}
             </button>
           </div>
         </div>
       </section>
     </div>
   );
+}
+
+function authModeLabel(mode: AuthenticationMode, t: Translator) {
+  switch (mode) {
+    case "none":
+      return t("connection.authNone");
+    case "usernamePassword":
+      return t("connection.authUsernamePassword");
+    case "digest":
+      return "Digest";
+    case "custom":
+      return t("connection.authCustom");
+    case "mseAccessKey":
+      return t("connection.authMse");
+  }
 }

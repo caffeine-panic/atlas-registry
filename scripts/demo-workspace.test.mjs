@@ -171,7 +171,7 @@ test("the production UI reads demo data only through the isolated source", () =>
     /disabled=\{[\s\S]{0,120}demoMode \|\| busy \|\| !document\.version \|\| !writeAllowed[\s\S]{0,40}\}/,
   );
   assert.match(appSource, /disabled=\{demoMode \|\| busy\}/);
-  assert.match(appSource, /SYNTHETIC DEMO · READ ONLY/);
+  assert.match(appSource, /t\("app\.demoBadge"\)/);
 });
 
 test("the screenshot workflow waits for the deterministic demo state", () => {
