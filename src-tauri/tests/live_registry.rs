@@ -1,12 +1,13 @@
 use atlas_registry_lib::{
-    credentials::ConnectionSecret,
+    credentials::{ConnectionCredentials, ConnectionSecret},
     registry::{
         AdapterId, AuthenticationMode, ConnectionAuth, ConnectionProfile, EtcdLeaseAction,
         EtcdLeaseActionResult, EtcdTransaction, MutationValue, NacosApiVersion, NacosNativeAction,
-        NacosNativeOperation, NativeResourceInfo, OperationId, RegistryService, ResourceAddress,
-        ResourceHistoryRequest, ResourceMutation, ResourceSearchRequest, SubscriptionId,
-        TlsProfile, ValueEncoding, WatchEvent, WatchRequest, WatchStatusState, ZookeeperCreateMode,
-        ZookeeperNativeAction, ZookeeperNativeActionResult,
+        NacosNativeOperation, NativeResourceInfo, OperationId, RegistryErrorCode, RegistryService,
+        ResourceAddress, ResourceHistoryRequest, ResourceMutation, ResourceSearchRequest,
+        SshAuthenticationMode, SshTunnelProfile, SubscriptionId, TlsProfile, ValueEncoding,
+        WatchEvent, WatchRequest, WatchStatusState, ZookeeperCreateMode, ZookeeperNativeAction,
+        ZookeeperNativeActionResult,
     },
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -22,13 +23,14 @@ fn profile(adapter: AdapterId, endpoint: String) -> ConnectionProfile {
         environment: Default::default(),
         auth: Default::default(),
         tls: Default::default(),
+        ssh_tunnel: Default::default(),
     }
 }
 
 fn secured_profile(
     adapter: AdapterId,
     endpoint: String,
-) -> (ConnectionProfile, Option<ConnectionSecret>) {
+) -> (ConnectionProfile, ConnectionCredentials) {
     let mut profile = profile(adapter, endpoint);
     let prefix = match adapter {
         AdapterId::Etcd => "ATLAS_TEST_ETCD",
@@ -77,11 +79,50 @@ fn secured_profile(
             server_name: std::env::var(format!("{prefix}_TLS_SERVER_NAME")).unwrap_or_default(),
         };
     }
-    (profile, secret)
+    (profile, ConnectionCredentials::new(secret, None))
 }
 
 fn mutations_enabled() -> bool {
     std::env::var("ATLAS_TEST_ENABLE_MUTATIONS").as_deref() == Ok("1")
+}
+
+fn ssh_tunneled_etcd_profile(endpoint: String) -> (ConnectionProfile, ConnectionCredentials) {
+    let (mut profile, registry_credentials) = secured_profile(AdapterId::Etcd, endpoint);
+    let authentication = match std::env::var("ATLAS_TEST_ETCD_SSH_AUTH").as_deref() {
+        Ok("privateKey") => SshAuthenticationMode::PrivateKey,
+        _ => SshAuthenticationMode::Password,
+    };
+    let ssh_secret = match authentication {
+        SshAuthenticationMode::Password => Some(ConnectionSecret::new(
+            std::env::var("ATLAS_TEST_ETCD_SSH_PASSWORD")
+                .expect("set ATLAS_TEST_ETCD_SSH_PASSWORD for password authentication"),
+        )),
+        SshAuthenticationMode::PrivateKey => std::env::var("ATLAS_TEST_ETCD_SSH_PASSPHRASE")
+            .ok()
+            .map(ConnectionSecret::new),
+    };
+    profile.ssh_tunnel = SshTunnelProfile {
+        enabled: true,
+        host: std::env::var("ATLAS_TEST_ETCD_SSH_HOST")
+            .expect("set ATLAS_TEST_ETCD_SSH_HOST before running SSH tunnel tests"),
+        port: std::env::var("ATLAS_TEST_ETCD_SSH_PORT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(22),
+        username: std::env::var("ATLAS_TEST_ETCD_SSH_USERNAME")
+            .expect("set ATLAS_TEST_ETCD_SSH_USERNAME before running SSH tunnel tests"),
+        authentication,
+        private_key_path: std::env::var("ATLAS_TEST_ETCD_SSH_PRIVATE_KEY").unwrap_or_default(),
+        host_key_fingerprint: std::env::var("ATLAS_TEST_ETCD_SSH_HOST_KEY")
+            .expect("set ATLAS_TEST_ETCD_SSH_HOST_KEY before running SSH tunnel tests"),
+    };
+    let registry_secret = registry_credentials
+        .registry()
+        .map(|secret| ConnectionSecret::new(secret.expose()));
+    (
+        profile,
+        ConnectionCredentials::new(registry_secret, ssh_secret),
+    )
 }
 
 fn unique_suffix() -> String {
@@ -170,6 +211,112 @@ fn etcd_live_session_can_browse_the_root() {
             assert_etcd_transaction(&service, &session.id, &prefix).await;
             assert_etcd_lease_lifecycle(&service, &session.id, &prefix).await;
         }
+    });
+}
+
+#[test]
+#[ignore = "requires an SSH bastion that can reach ATLAS_TEST_ETCD_ENDPOINT"]
+fn etcd_ssh_tunnel_live_session_can_browse_root() {
+    let endpoint = std::env::var("ATLAS_TEST_ETCD_ENDPOINT")
+        .expect("set ATLAS_TEST_ETCD_ENDPOINT before running ignored tests");
+    let (connection, credentials) = ssh_tunneled_etcd_profile(endpoint);
+    let service = RegistryService::default();
+
+    tauri::async_runtime::block_on(async {
+        let session = service
+            .open_with_credentials(connection, credentials)
+            .await
+            .expect("etcd session should open through the SSH tunnel");
+        service
+            .list(&session.id, ResourceAddress::Root, None, 25)
+            .await
+            .expect("etcd root should be browsable through the SSH tunnel");
+        service
+            .close(&session.id)
+            .await
+            .expect("closing the session should tear down the SSH tunnel");
+    });
+}
+
+#[test]
+#[ignore = "requires an SSH bastion configured for the etcd tunnel fixture"]
+fn etcd_ssh_tunnel_rejects_changed_host_key() {
+    let endpoint = std::env::var("ATLAS_TEST_ETCD_ENDPOINT")
+        .expect("set ATLAS_TEST_ETCD_ENDPOINT before running ignored tests");
+    let (mut connection, credentials) = ssh_tunneled_etcd_profile(endpoint);
+    connection.ssh_tunnel.host_key_fingerprint =
+        "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_owned();
+
+    let error = tauri::async_runtime::block_on(
+        RegistryService::default().open_with_credentials(connection, credentials),
+    )
+    .expect_err("a changed SSH host key must be rejected");
+    assert_eq!(error.code, RegistryErrorCode::SshHostKey);
+}
+
+#[test]
+#[ignore = "requires an SSH bastion configured for the etcd tunnel fixture"]
+fn etcd_ssh_tunnel_rejects_invalid_authentication() {
+    let endpoint = std::env::var("ATLAS_TEST_ETCD_ENDPOINT")
+        .expect("set ATLAS_TEST_ETCD_ENDPOINT before running ignored tests");
+    let (mut connection, credentials) = ssh_tunneled_etcd_profile(endpoint);
+    let credentials = if connection.ssh_tunnel.authentication == SshAuthenticationMode::Password {
+        ConnectionCredentials::new(
+            credentials
+                .registry()
+                .map(|secret| ConnectionSecret::new(secret.expose())),
+            Some(ConnectionSecret::new("intentionally-invalid-password")),
+        )
+    } else {
+        connection.ssh_tunnel.private_key_path = "/path/that/does/not/exist".to_owned();
+        credentials
+    };
+
+    let error = tauri::async_runtime::block_on(
+        RegistryService::default().open_with_credentials(connection, credentials),
+    )
+    .expect_err("invalid SSH authentication must be rejected");
+    assert_eq!(error.code, RegistryErrorCode::PermissionDenied);
+}
+
+#[test]
+#[ignore = "requires an SSH bastion and an unreachable ATLAS_TEST_ETCD_SSH_TIMEOUT_ENDPOINT"]
+fn etcd_ssh_tunnel_probe_timeout_is_bounded() {
+    let endpoint = std::env::var("ATLAS_TEST_ETCD_SSH_TIMEOUT_ENDPOINT")
+        .expect("set ATLAS_TEST_ETCD_SSH_TIMEOUT_ENDPOINT to a black-holed destination");
+    let (connection, credentials) = ssh_tunneled_etcd_profile(endpoint);
+
+    let error = tauri::async_runtime::block_on(
+        RegistryService::default().open_with_credentials(connection, credentials),
+    )
+    .expect_err("a black-holed tunnel destination must time out");
+    assert_eq!(error.code, RegistryErrorCode::Timeout);
+}
+
+#[test]
+#[ignore = "requires an SSH bastion and an unreachable ATLAS_TEST_ETCD_SSH_TIMEOUT_ENDPOINT"]
+fn etcd_ssh_tunnel_probe_can_be_cancelled() {
+    let endpoint = std::env::var("ATLAS_TEST_ETCD_SSH_TIMEOUT_ENDPOINT")
+        .expect("set ATLAS_TEST_ETCD_SSH_TIMEOUT_ENDPOINT to a black-holed destination");
+    let (connection, credentials) = ssh_tunneled_etcd_profile(endpoint);
+    let service = RegistryService::default();
+    let operation_id = OperationId::new(format!("ssh-cancel-{}", unique_suffix())).unwrap();
+
+    tauri::async_runtime::block_on(async {
+        let running_service = service.clone();
+        let running_operation = operation_id.clone();
+        let task = tokio::spawn(async move {
+            running_service
+                .probe_with_credentials_cancellable(running_operation, connection, credentials)
+                .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(service.cancel(&operation_id).await);
+        let error = task
+            .await
+            .expect("probe task should join")
+            .expect_err("cancelled probe should not open a session");
+        assert_eq!(error.code, RegistryErrorCode::Cancelled);
     });
 }
 

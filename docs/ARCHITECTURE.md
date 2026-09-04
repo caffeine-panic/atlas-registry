@@ -83,6 +83,7 @@ flowchart LR
 | 模块                                 | 职责                                                                                      |
 | ------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `registry/adapters.rs` + `adapters/` | 三协议客户端封装成统一的 `RegistrySession`，含 Nacos 用户密码、MSE AccessKey 与自定义鉴权 |
+| `registry/ssh_tunnel.rs`             | etcd 单跳 SSH 握手、主机密钥固定、认证、端口转发与有界清理                                |
 | `registry/mutations.rs`              | 条件变更执行与前后快照                                                                    |
 | `registry/watch.rs`                  | 监听生命周期、断线恢复、Nacos 5 秒 MD5 对账                                               |
 | `registry/nacos_native.rs`           | namespace / service / instance 管理与有界回读确认                                         |
@@ -98,7 +99,7 @@ flowchart LR
 | 边界         | 机制                                                                                                                                                                                    |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | WebView 权限 | CSP 禁外联；capability 只授权 `main` 窗口调用应用命令（[tauri.conf.json](../src-tauri/tauri.conf.json)、[capabilities/default.json](../src-tauri/capabilities/default.json)）           |
-| 凭据         | 密码、token、MSE AccessKey Secret 只进系统凭据库（`keyring`），连接配置文件不含 secret；临时凭据仅存活于当前连接，`zeroize` 擦除                                                        |
+| 凭据         | 注册中心密码/token/MSE AK Secret 与 SSH 密码/私钥口令使用不同的系统凭据库条目；连接配置文件不含 secret，临时凭据仅存活于当前连接并由 `zeroize` 擦除                                     |
 | 审计         | `mutation-audit.jsonl` 记录版本 / 大小 / 编码 / SHA-256 摘要及生产锁连接 ID / 时长，不记录 value、密码、token、连接名或 endpoint；started / unlock 事件先于远端变更或开放写窗口同步落盘 |
 | 诊断包       | 只含运行时版本、adapter 能力、聚合连接计数；由 sentinel 测试（`diagnostics.rs`）禁止出现连接名 / endpoint / namespace / 凭据                                                            |
 | 更新         | 只访问 GitHub Releases 的 `latest.json`，minisign 签名验证不可关闭，下载安装全在 Rust 侧                                                                                                |
@@ -115,6 +116,7 @@ flowchart LR
 5. **Nacos SDK cache 不可信**：配置正文读取、写前检查、写后确认、周期对账一律走版本对应的权威 HTTP API；SDK 只承担 gRPC mutation、listener 与临时实例 session（原因见 ADR-0001 上游约束）。
 6. **MSE 签名路径一致**：SDK Config/Naming 身份上下文与权威 HTTP API 共享 AccessKey 生命周期和 HMAC-SHA1 规则，但分别遵循 SDK `RequestResource` 与 HTTP 参数的资源规范化语义；HTTP Config 在 namespace 非空时保留空 group 分隔符。AK Secret 不进入 URL、连接配置或日志。
 7. **取消安全**：长操作挂在 `CancellationToken` 上；审计追加在独立任务中 `write_all + sync_data`，不被取消切断。
+8. **SSH 身份固定**：SSH 隧道只接受 profile 中显式固定的 SHA-256 主机密钥指纹；身份变化返回独立的 `sshHostKey` 错误。每个隧道最多同时转发 32 个连接，关闭、连接取消或超时会终止监听与全部转发任务。
 
 ## 测试体系
 

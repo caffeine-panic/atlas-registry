@@ -3,6 +3,7 @@ import type { AdapterId } from "./AdapterId";
 import type { ConnectionAuth } from "./ConnectionAuth";
 import type { ConnectionEnvironment } from "./ConnectionEnvironment";
 import type { NacosApiVersion } from "./NacosApiVersion";
+import type { SshTunnelProfile } from "./SshTunnelProfile";
 import type { TlsProfile } from "./TlsProfile";
 
-export type ConnectionProfile = { id: string, name: string, adapter: AdapterId, endpoint: string, namespace: string, nacosApiVersion: NacosApiVersion, environment: ConnectionEnvironment, auth: ConnectionAuth, tls: TlsProfile, };
+export type ConnectionProfile = { id: string, name: string, adapter: AdapterId, endpoint: string, namespace: string, nacosApiVersion: NacosApiVersion, environment: ConnectionEnvironment, auth: ConnectionAuth, tls: TlsProfile, sshTunnel: SshTunnelProfile, };

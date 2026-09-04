@@ -29,6 +29,7 @@ export type WorkspaceSource = {
     profile: ConnectionProfile,
     operationId: string,
     transientSecret?: string,
+    transientSshSecret?: string,
   ) => Promise<ConnectionSession>;
   closeConnection: (connectionId: string) => Promise<void>;
   cancelOperation: (operationId: string) => Promise<boolean>;
@@ -69,6 +70,16 @@ const emptyTls = {
   serverName: "",
 };
 
+const emptySshTunnel = {
+  enabled: false,
+  host: "",
+  port: 22,
+  username: "",
+  authentication: "privateKey" as const,
+  privateKeyPath: "",
+  hostKeyFingerprint: "",
+};
+
 export const DEMO_PROFILES: ConnectionProfile[] = [
   {
     id: "demo-etcd",
@@ -80,6 +91,7 @@ export const DEMO_PROFILES: ConnectionProfile[] = [
     environment: "production",
     auth: { mode: "none", username: "", customKey: "" },
     tls: emptyTls,
+    sshTunnel: emptySshTunnel,
   },
   {
     id: "demo-zookeeper",
@@ -91,6 +103,7 @@ export const DEMO_PROFILES: ConnectionProfile[] = [
     environment: "staging",
     auth: { mode: "none", username: "", customKey: "" },
     tls: emptyTls,
+    sshTunnel: emptySshTunnel,
   },
   {
     id: "demo-nacos",
@@ -102,6 +115,7 @@ export const DEMO_PROFILES: ConnectionProfile[] = [
     environment: "development",
     auth: { mode: "none", username: "", customKey: "" },
     tls: emptyTls,
+    sshTunnel: emptySshTunnel,
   },
 ];
 

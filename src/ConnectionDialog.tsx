@@ -6,6 +6,7 @@ import type {
   AuthenticationMode,
   ConnectionEnvironment,
   ConnectionProfile,
+  SshAuthenticationMode,
 } from "./registry";
 
 export type ConnectionDialogMode = "new" | "edit" | "copy";
@@ -14,12 +15,14 @@ type ConnectionDialogProps = {
   mode: ConnectionDialogMode;
   form: ConnectionProfile;
   secret: string;
+  sshSecret: string;
   busy: boolean;
   testing: boolean;
   locale: AppLocale;
   t: Translator;
   onChange: (profile: ConnectionProfile) => void;
   onSecretChange: (secret: string) => void;
+  onSshSecretChange: (secret: string) => void;
   onCancel: () => void;
   onTest: () => void;
   onSave: () => void;
@@ -43,12 +46,14 @@ export function ConnectionDialog({
   mode,
   form,
   secret,
+  sshSecret,
   busy,
   testing,
   locale,
   t,
   onChange,
   onSecretChange,
+  onSshSecretChange,
   onCancel,
   onTest,
   onSave,
@@ -67,6 +72,7 @@ export function ConnectionDialog({
 
   const changeAdapter = (adapter: AdapterId) => {
     onSecretChange("");
+    onSshSecretChange("");
     onChange({
       ...form,
       adapter,
@@ -79,6 +85,15 @@ export function ConnectionDialog({
         clientCertificatePath: "",
         clientKeyPath: "",
         serverName: "",
+      },
+      sshTunnel: {
+        enabled: false,
+        host: "",
+        port: 22,
+        username: "",
+        authentication: "password",
+        privateKeyPath: "",
+        hostKeyFingerprint: "",
       },
     });
   };
@@ -385,6 +400,166 @@ export function ConnectionDialog({
                     />
                   </label>
                 )}
+              </>
+            )}
+          </div>
+        )}
+
+        {form.adapter === "etcd" && (
+          <div className="form-section">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={form.sshTunnel.enabled}
+                onChange={(event) => {
+                  if (!event.target.checked) onSshSecretChange("");
+                  onChange({
+                    ...form,
+                    sshTunnel: {
+                      ...form.sshTunnel,
+                      enabled: event.target.checked,
+                    },
+                  });
+                }}
+              />
+              {t("connection.enableSshTunnel")}
+            </label>
+            {form.sshTunnel.enabled && (
+              <>
+                <div className="form-grid equal">
+                  <label>
+                    {t("connection.sshHost")}
+                    <input
+                      value={form.sshTunnel.host}
+                      onChange={(event) =>
+                        onChange({
+                          ...form,
+                          sshTunnel: {
+                            ...form.sshTunnel,
+                            host: event.target.value,
+                          },
+                        })
+                      }
+                      placeholder="bastion.example.com"
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label>
+                    {t("connection.sshPort")}
+                    <input
+                      type="number"
+                      min="1"
+                      max="65535"
+                      value={form.sshTunnel.port}
+                      onChange={(event) =>
+                        onChange({
+                          ...form,
+                          sshTunnel: {
+                            ...form.sshTunnel,
+                            port: Number(event.target.value),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="form-grid equal">
+                  <label>
+                    {t("connection.sshUsername")}
+                    <input
+                      value={form.sshTunnel.username}
+                      onChange={(event) =>
+                        onChange({
+                          ...form,
+                          sshTunnel: {
+                            ...form.sshTunnel,
+                            username: event.target.value,
+                          },
+                        })
+                      }
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label>
+                    {t("connection.sshAuthentication")}
+                    <select
+                      value={form.sshTunnel.authentication}
+                      onChange={(event) => {
+                        onSshSecretChange("");
+                        onChange({
+                          ...form,
+                          sshTunnel: {
+                            ...form.sshTunnel,
+                            authentication: event.target
+                              .value as SshAuthenticationMode,
+                            privateKeyPath: "",
+                          },
+                        });
+                      }}
+                    >
+                      <option value="password">
+                        {t("connection.sshPassword")}
+                      </option>
+                      <option value="privateKey">
+                        {t("connection.sshPrivateKey")}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                {form.sshTunnel.authentication === "privateKey" && (
+                  <label>
+                    {t("connection.sshPrivateKeyPath")}
+                    <input
+                      value={form.sshTunnel.privateKeyPath}
+                      onChange={(event) =>
+                        onChange({
+                          ...form,
+                          sshTunnel: {
+                            ...form.sshTunnel,
+                            privateKeyPath: event.target.value,
+                          },
+                        })
+                      }
+                      placeholder="/Users/me/.ssh/id_ed25519"
+                    />
+                  </label>
+                )}
+                <label>
+                  {form.sshTunnel.authentication === "password"
+                    ? t("connection.sshPassword")
+                    : t("connection.sshKeyPassphrase")}
+                  <input
+                    type="password"
+                    value={sshSecret}
+                    onChange={(event) => onSshSecretChange(event.target.value)}
+                    autoComplete="new-password"
+                    placeholder={
+                      mode === "edit"
+                        ? t("connection.sshKeepSecret")
+                        : form.sshTunnel.authentication === "privateKey"
+                          ? t("connection.sshPassphraseOptional")
+                          : t("connection.storeInVault")
+                    }
+                  />
+                </label>
+                <label>
+                  {t("connection.sshHostKeyFingerprint")}
+                  <input
+                    value={form.sshTunnel.hostKeyFingerprint}
+                    onChange={(event) =>
+                      onChange({
+                        ...form,
+                        sshTunnel: {
+                          ...form.sshTunnel,
+                          hostKeyFingerprint: event.target.value,
+                        },
+                      })
+                    }
+                    placeholder="SHA256:..."
+                    autoComplete="off"
+                  />
+                </label>
+                <p className="form-note">{t("connection.sshTunnelHelp")}</p>
               </>
             )}
           </div>

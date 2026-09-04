@@ -26,8 +26,8 @@ pub(super) async fn run(
     events: mpsc::Sender<WatchEvent>,
 ) -> Result<(), RegistryError> {
     match session {
-        RegistrySession::Etcd(client) => {
-            watch_etcd(*client, subscription_id, request, token, events).await
+        RegistrySession::Etcd(session) => {
+            watch_etcd(session.client(), subscription_id, request, token, events).await
         }
         RegistrySession::Zookeeper(client) => {
             watch_zookeeper(client, subscription_id, request, token, events).await

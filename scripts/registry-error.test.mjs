@@ -83,6 +83,7 @@ test("structured registry errors have a complete English read-only surface", () 
     "credentialMissing",
     "credentialStore",
     "tlsConfiguration",
+    "sshHostKey",
     "storage",
     "cancelled",
     "productionLocked",
