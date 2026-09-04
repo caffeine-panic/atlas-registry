@@ -39,6 +39,15 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - `src/generated/` 是 ts-rs 生成物，禁止手改、不参与格式化。
 - 注释和文档写中文；标识符和提交信息写英文。
 
+## 翻译
+
+界面通过 `src/i18n.ts` 中同一份类型化目录支持 English / 简体中文。
+
+1. 每个键必须同时加入 `messages.en` 和 `messages["zh-CN"]`；协议名、资源标识、元数据名与服务端 value 不得作为翻译键。
+2. 动态内容使用 `{count}` 形式的命名占位符，并作为 value 传给 `t(...)`；不得拼接翻译 HTML，也不得使用 `dangerouslySetInnerHTML`。
+3. 两种语言都要审查完整状态序列，包括加载、空状态、取消、校验、value 超限和结构化错误，不只检查成功路径。
+4. 运行 `npm run test:ui`；`scripts/i18n.test.mjs` 会检查目录键对齐、语言回退/持久化、严格插值和两套连接到查看旅程。
+
 ## 提交与 PR
 
 - 提交信息采用 Conventional Commits：`feat:`、`fix:`、`docs:`、`refactor:`、`test:`、`ci:`、`chore:`。

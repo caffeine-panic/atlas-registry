@@ -41,6 +41,15 @@ The tools are the standard:
 - `src/generated/` contains ts-rs output. Never edit or format it manually.
 - Source comments and internal architecture documents use Chinese; identifiers and commit messages use English.
 
+## Translations
+
+The user interface supports English and Simplified Chinese through the same typed catalog in `src/i18n.ts`.
+
+1. Add every key to both `messages.en` and `messages["zh-CN"]`; never use protocol names, resource identifiers, metadata names, or server values as translation keys.
+2. Use named placeholders such as `{count}` and pass them as values to `t(...)`. Do not build translated HTML or use `dangerouslySetInnerHTML`.
+3. Review both languages for the complete state sequence, including loading, empty, cancellation, validation, bounded-value, and structured-error states—not only the happy path.
+4. Run `npm run test:ui`; `scripts/i18n.test.mjs` checks catalog parity, locale fallback/persistence, strict interpolation, and both connect-to-inspect journeys.
+
 ## Commits and pull requests
 
 - Use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, or `chore:`.

@@ -66,6 +66,14 @@ import { SafeChangeDialog } from "./SafeChangeDialog";
 import { ResourceCompareDialog } from "./ResourceCompareDialog";
 import { ProductionLockBanner } from "./ProductionLockBanner";
 import {
+  connectionEnvironmentLabel,
+  createTranslator,
+  loadAppLocale,
+  saveAppLocale,
+  type MessageKey,
+  type Translator,
+} from "./i18n";
+import {
   effectiveProductionLock,
   productionWriteAllowed,
 } from "./productionLock";
@@ -85,7 +93,6 @@ import {
   applyImport,
   checkForAppUpdate,
   chooseImport,
-  connectionEnvironmentLabels,
   deleteConnectionProfile,
   errorMessage,
   executeEtcdLeaseAction,
@@ -194,21 +201,21 @@ function highlightedText(value: string, query: string) {
   );
 }
 
-const watchStatusLabels: Record<WatchStatusState, string> = {
-  starting: "正在建立监听",
-  live: "实时监听中",
-  reconnecting: "连接中断，正在恢复",
-  compacted: "历史事件已压缩，需要刷新",
-  sessionExpired: "会话已过期，需要重新连接",
-  stopped: "监听已停止",
-  failed: "监听失败",
+const watchStatusKeys: Record<WatchStatusState, MessageKey> = {
+  starting: "resource.watchStarting",
+  live: "resource.watchLive",
+  reconnecting: "resource.watchReconnecting",
+  compacted: "resource.watchCompacted",
+  sessionExpired: "resource.watchExpired",
+  stopped: "resource.watchStopped",
+  failed: "resource.watchFailed",
 };
 
-const watchChangeLabels: Record<WatchChangeEvent["change"], string> = {
-  created: "已创建",
-  updated: "已更新",
-  deleted: "已删除",
-  childrenChanged: "子节点已变化",
+const watchChangeKeys: Record<WatchChangeEvent["change"], MessageKey> = {
+  created: "resource.watchCreated",
+  updated: "resource.watchUpdated",
+  deleted: "resource.watchDeleted",
+  childrenChanged: "resource.watchChildren",
 };
 
 const emptyForm = (): ConnectionProfile => ({
@@ -305,9 +312,13 @@ function etcdAddressFromInput(
   return { type: "etcd", keyBase64 };
 }
 
-function locateAddress(adapter: AdapterId, rawInput: string): ResourceAddress {
+function locateAddress(
+  adapter: AdapterId,
+  rawInput: string,
+  t: Translator,
+): ResourceAddress {
   const input = rawInput.trim();
-  if (!input) throw new Error("请输入要定位的资源标识");
+  if (!input) throw new Error(t("workspace.locateRequired"));
   if (adapter === "etcd") {
     if (!input.startsWith("base64:"))
       return { type: "etcd", keyBase64: utf8Base64(input) };
@@ -315,9 +326,9 @@ function locateAddress(adapter: AdapterId, rawInput: string): ResourceAddress {
     try {
       atob(keyBase64);
     } catch {
-      throw new Error("base64: 后面的 etcd key 不是有效 Base64");
+      throw new Error(t("workspace.etcdBase64Invalid"));
     }
-    if (!keyBase64) throw new Error("etcd key 不能为空");
+    if (!keyBase64) throw new Error(t("workspace.etcdKeyRequired"));
     return { type: "etcd", keyBase64 };
   }
   if (adapter === "zookeeper") {
@@ -326,15 +337,15 @@ function locateAddress(adapter: AdapterId, rawInput: string): ResourceAddress {
       input.includes("//") ||
       (input.length > 1 && input.endsWith("/"))
     ) {
-      throw new Error("ZooKeeper 路径必须是规范的绝对路径");
+      throw new Error(t("workspace.zookeeperPathInvalid"));
     }
     return { type: "zookeeper", path: input };
   }
   const separator = input.indexOf(" / ");
-  if (separator < 1) throw new Error("Nacos 定位格式为 GROUP / dataId");
+  if (separator < 1) throw new Error(t("workspace.nacosLocateFormat"));
   const group = input.slice(0, separator).trim();
   const dataId = input.slice(separator + 3).trim();
-  if (!group || !dataId) throw new Error("Nacos 定位需要 group 和 dataId");
+  if (!group || !dataId) throw new Error(t("workspace.nacosIdentityRequired"));
   return { type: "nacosConfig", group, dataId };
 }
 
@@ -349,6 +360,10 @@ function searchScope(
 }
 
 export function App() {
+  const [locale, setLocale] = useState(loadAppLocale);
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
+  const t = useMemo(() => createTranslator(locale), [locale]);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(() =>
     workspaceModeFromSearch(globalThis.location?.search ?? ""),
   );
@@ -391,7 +406,8 @@ export function App() {
   const showInfo = (text: string) => showToast(text, "info");
   const showWarning = (text: string) => showToast(text, "warning");
   const showErrorText = (text: string) => showToast(text, "error");
-  const showError = (reason: unknown) => showErrorText(errorMessage(reason));
+  const showError = (reason: unknown) =>
+    showErrorText(errorMessage(reason, locale));
   const dismissToast = (id: number) =>
     setToast((current) => (current?.id === id ? undefined : current));
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo>();
@@ -532,6 +548,10 @@ export function App() {
   const connectionsExpanded = panelLayout.connections === "expanded";
   const resourcesExpanded = panelLayout.resources === "expanded";
 
+  useEffect(() => {
+    globalThis.document.documentElement.lang = locale;
+  }, [locale]);
+
   const toggleNavigationPanel = (panel: PanelId) => {
     setPanelLayout((current) => savePanelLayout(togglePanel(current, panel)));
   };
@@ -632,7 +652,9 @@ export function App() {
       .catch((reason: unknown) => {
         if (!current) return;
         setProductionLockStatus(undefined);
-        setToast((toast) => nextToast(toast, errorMessage(reason), "error"));
+        setToast((toast) =>
+          nextToast(toast, errorMessage(reason, localeRef.current), "error"),
+        );
       });
     return () => {
       current = false;
@@ -707,7 +729,9 @@ export function App() {
       })
       .catch((reason: unknown) => {
         if (!current) return;
-        setToast((toast) => nextToast(toast, errorMessage(reason), "error"));
+        setToast((toast) =>
+          nextToast(toast, errorMessage(reason, localeRef.current), "error"),
+        );
       });
     return () => {
       current = false;
@@ -951,7 +975,7 @@ export function App() {
   const startResourceWatch = async () => {
     if (!selectedSession || !selectedProfile || !document || busy) return;
     if (demoMode) {
-      showInfo("演示工作区不会建立远端监听");
+      showInfo(t("resource.demoWatch"));
       return;
     }
     const generation = watchGeneration.current + 1;
@@ -984,7 +1008,11 @@ export function App() {
       if (watchGeneration.current !== generation) return;
       setResourceWatch((current) =>
         current?.subscriptionId === subscriptionId
-          ? { ...current, state: "failed", message: errorMessage(reason) }
+          ? {
+              ...current,
+              state: "failed",
+              message: errorMessage(reason, locale),
+            }
           : current,
       );
       showError(reason);
@@ -1009,9 +1037,7 @@ export function App() {
     if (!selectedSession || !document || busy) return;
     if (
       draftValue !== document.value.content &&
-      !globalThis.confirm(
-        "远端资源已变化。刷新会丢弃当前未保存的编辑，是否继续？",
-      )
+      !globalThis.confirm(t("resource.remoteRefreshConfirm"))
     ) {
       return;
     }
@@ -1022,7 +1048,7 @@ export function App() {
       setResourceWatch((current) =>
         current ? { ...current, remoteChanged: false } : current,
       );
-      showSuccess("已读取远端最新版本");
+      showSuccess(t("resource.remoteLatest"));
     } catch (reason) {
       if (isNotFound(reason)) {
         await stopActiveWatch();
@@ -1033,9 +1059,13 @@ export function App() {
         } catch {
           // The deletion is already known; a tree refresh failure should not restore stale content.
         }
-        showWarning("远端资源已删除，已移除本地旧内容");
+        showWarning(t("resource.remoteDeleted"));
       } else {
-        showErrorText(`刷新监听资源失败：${errorMessage(reason)}`);
+        showErrorText(
+          t("resource.watchRefreshFailed", {
+            message: errorMessage(reason, locale),
+          }),
+        );
       }
     } finally {
       setBusy(false);
@@ -1089,7 +1119,7 @@ export function App() {
       setSessions((current) => ({ ...current, [session.id]: session }));
       setSelectedId(session.id);
       await reloadRoot(session.id);
-      showSuccess(`已连接 ${session.endpoint}`);
+      showSuccess(t("connection.connected", { endpoint: session.endpoint }));
       return true;
     } catch (reason) {
       showError(reason);
@@ -1102,7 +1132,7 @@ export function App() {
   const saveAndConnect = async () => {
     const candidate = normalizedProfile(form);
     if (!candidate.name || !candidate.endpoint) {
-      showErrorText("连接名称和 endpoint 不能为空");
+      showErrorText(t("connection.required"));
       return;
     }
     if (
@@ -1110,7 +1140,7 @@ export function App() {
       dialogMode !== "edit" &&
       !connectionSecret
     ) {
-      showErrorText("新连接启用认证时必须填写密钥");
+      showErrorText(t("connection.secretRequired"));
       return;
     }
     try {
@@ -1136,7 +1166,7 @@ export function App() {
   const testConnection = async () => {
     const candidate = normalizedProfile(form);
     if (!candidate.name || !candidate.endpoint) {
-      showErrorText("连接名称和 endpoint 不能为空");
+      showErrorText(t("connection.required"));
       return;
     }
     setBusy(true);
@@ -1149,9 +1179,9 @@ export function App() {
         operationId,
         connectionSecret || undefined,
       );
-      showSuccess(`连接测试成功：${result.endpoint}`);
+      showSuccess(t("connection.testSucceeded", { endpoint: result.endpoint }));
     } catch (reason) {
-      if (isCancelled(reason)) showInfo("连接测试已取消");
+      if (isCancelled(reason)) showInfo(t("connection.testCancelled"));
       else showError(reason);
     } finally {
       finishOperation(operationId);
@@ -1228,7 +1258,7 @@ export function App() {
     if (!selectedSession || !selectedProfile || busy) return;
     const query = resourceQuery.trim();
     if (!query) {
-      showErrorText("请输入要搜索的资源标识");
+      showErrorText(t("workspace.searchRequired"));
       return;
     }
     const scope = searchScope(selectedProfile.adapter, selectedAddress);
@@ -1258,7 +1288,13 @@ export function App() {
       });
       setFilter("");
       showInfo(
-        `${page.items.length} 个匹配项 · 本次检查 ${page.scanned} 个标识${page.exhaustive ? " · 已到当前范围末尾" : " · 可继续翻页"}`,
+        t("workspace.searchResult", {
+          matches: page.items.length,
+          scanned: page.scanned,
+          suffix: t(
+            page.exhaustive ? "workspace.searchEnd" : "workspace.searchMore",
+          ),
+        }),
       );
     } catch (reason) {
       showError(reason);
@@ -1271,7 +1307,7 @@ export function App() {
     if (!selectedSession || !selectedProfile || busy) return;
     let address: ResourceAddress;
     try {
-      address = locateAddress(selectedProfile.adapter, resourceQuery);
+      address = locateAddress(selectedProfile.adapter, resourceQuery, t);
     } catch (reason) {
       showError(reason);
       return;
@@ -1279,7 +1315,7 @@ export function App() {
     if (
       document &&
       draftValue !== document.value.content &&
-      !globalThis.confirm("定位其他资源会丢弃当前未保存的编辑，是否继续？")
+      !globalThis.confirm(t("workspace.locateDiscardConfirm"))
     ) {
       return;
     }
@@ -1290,7 +1326,7 @@ export function App() {
     setSelectedAddress(address);
     try {
       showDocument(await runRead(selectedSession.id, address));
-      showSuccess("已精确定位并读取资源");
+      showSuccess(t("workspace.located"));
     } catch (reason) {
       showDocument(undefined);
       showError(reason);
@@ -1341,7 +1377,7 @@ export function App() {
         ROOT_ADDRESS,
         nacosPageCursor(lastPage),
       );
-      showInfo("列表已变化，已定位到最后一页");
+      showInfo(t("workspace.listMoved"));
     }
     return page;
   };
@@ -1416,7 +1452,7 @@ export function App() {
       document &&
       !sameAddress(document.address, row.node.address) &&
       draftValue !== document.value.content &&
-      !globalThis.confirm("选择其他资源会丢弃当前未保存的编辑，是否继续？")
+      !globalThis.confirm(t("workspace.selectDiscardConfirm"))
     ) {
       return;
     }
@@ -1517,25 +1553,36 @@ export function App() {
 
   const showValidationFailure = (
     issue: ConfigValidationIssue,
-    action: "保存" | "创建",
+    action?: "保存" | "创建",
   ) => {
     setValidationIssue(issue);
     editorRef.current?.focusOffset(issue.offset);
-    showErrorText(
-      `${action}前语法校验失败：第 ${issue.line} 行，第 ${issue.column} 列：${issue.message}`,
-    );
+    const location = t("resource.validationLocation", {
+      line: issue.line,
+      column: issue.column,
+      message: issue.message,
+    });
+    showErrorText(action ? `${action}前语法校验失败：${location}` : location);
   };
 
   const validateEditorContent = () => {
     const result = validateConfig(editorLanguage, draftValue);
     if (result.kind === "valid") {
       setValidationIssue(undefined);
-      showSuccess(`${configLanguageLabels[editorLanguage]} 语法校验通过`);
+      showSuccess(
+        t("resource.validationPassed", {
+          language: configLanguageLabels[editorLanguage],
+        }),
+      );
     } else if (result.kind === "unsupported") {
       setValidationIssue(undefined);
-      showInfo(`${configLanguageLabels[editorLanguage]} 当前仅支持高亮`);
+      showInfo(
+        t("resource.highlightOnly", {
+          language: configLanguageLabels[editorLanguage],
+        }),
+      );
     } else {
-      showValidationFailure(result.issue, "保存");
+      showValidationFailure(result.issue);
     }
   };
 
@@ -1907,7 +1954,7 @@ export function App() {
       result = await mutateResource(selectedSession.id, mutation, operationId);
     } catch (reason) {
       finishOperation(operationId);
-      const message = errorMessage(reason);
+      const message = errorMessage(reason, locale);
       const recovery = mutationFailureRecovery(reason);
       if (recovery === "unknownOutcome") {
         const reconciled = await reconcileUnknownMutation(
@@ -1981,7 +2028,7 @@ export function App() {
           : "变更成功；Nacos 操作为校验后变更，脱敏审计已记录",
       );
     } catch (reason) {
-      showWarning(`变更已成功，但刷新失败：${errorMessage(reason)}`);
+      showWarning(`变更已成功，但刷新失败：${errorMessage(reason, locale)}`);
     } finally {
       setBusy(false);
     }
@@ -2054,7 +2101,7 @@ export function App() {
       try {
         await reloadRoot(selectedSession.id);
       } catch (reason) {
-        refreshSuffix = `；资源树刷新失败：${errorMessage(reason)}`;
+        refreshSuffix = `；资源树刷新失败：${errorMessage(reason, locale)}`;
       }
       if (result.failed) {
         showWarning(
@@ -2306,7 +2353,7 @@ export function App() {
         );
       }
     } catch (reason) {
-      const message = errorMessage(reason);
+      const message = errorMessage(reason, locale);
       try {
         const refreshed = await runRead(selectedSession.id, action.address);
         showDocument(refreshed);
@@ -2382,7 +2429,7 @@ export function App() {
         );
       }
     } catch (reason) {
-      const message = errorMessage(reason);
+      const message = errorMessage(reason, locale);
       try {
         await reloadRoot(selectedSession.id);
         if (action.action === "setAcl") {
@@ -2492,7 +2539,7 @@ export function App() {
         `事务已在 revision ${result.revision} 原子提交 ${result.results.length} 项；脱敏审计已记录`,
       );
     } catch (reason) {
-      const message = errorMessage(reason);
+      const message = errorMessage(reason, locale);
       try {
         await reloadRoot(selectedSession.id);
         if (document) {
@@ -2547,7 +2594,7 @@ export function App() {
     setCreateDialogOpen(false);
     setCompareContext(undefined);
     setResourceComparison(undefined);
-    showSuccess("连接已断开");
+    showSuccess(t("connection.disconnected"));
   };
 
   const unlockProduction = async (
@@ -2695,19 +2742,17 @@ export function App() {
           <span className="logo">A</span>Atlas Registry
         </div>
         <span className="release-tag">SAFE-WRITE ALPHA</span>
-        {demoMode && (
-          <span className="demo-badge">SYNTHETIC DEMO · READ ONLY</span>
-        )}
+        {demoMode && <span className="demo-badge">{t("app.demoBadge")}</span>}
         <div className="top-spacer" data-tauri-drag-region />
         <div className={`runtime ${capabilities ? "" : "pending"}`}>
           <span className="status-dot" />
           {demoMode
             ? capabilities
-              ? `Synthetic · ${capabilities.length} adapters`
-              : "正在准备合成数据…"
+              ? t("app.runtimeSynthetic", { count: capabilities.length })
+              : t("app.runtimePreparing")
             : capabilities
-              ? `Rust Core · ${capabilities.length} adapters`
-              : "正在启动 Rust Core…"}
+              ? t("app.runtimeRust", { count: capabilities.length })
+              : t("app.runtimeStarting")}
         </div>
         {demoMode ? (
           <button
@@ -2715,7 +2760,7 @@ export function App() {
             disabled={busy}
             onClick={() => void switchWorkspaceMode("live")}
           >
-            退出演示
+            {t("app.exitDemo")}
           </button>
         ) : (
           <>
@@ -2724,34 +2769,34 @@ export function App() {
               disabled={busy}
               onClick={() => void switchWorkspaceMode("demo")}
             >
-              ◇ 演示
+              {t("app.demo")}
             </button>
             <button
               className="button update-button"
               disabled={checkingUpdate || installingUpdate}
               onClick={() => void checkForUpdates()}
             >
-              {checkingUpdate ? "检查中…" : "⇩ 更新"}
+              {checkingUpdate ? t("app.checkingUpdates") : t("app.updates")}
             </button>
             <button
               className="button"
               disabled={checkingUpdate || installingUpdate}
               onClick={() => setSettingsOpen(true)}
             >
-              ⚙ 设置
+              {t("app.settings")}
             </button>
             <button
               className="button"
               disabled={busy}
               onClick={() => void exportDiagnostics()}
             >
-              诊断包
+              {t("app.diagnostics")}
             </button>
             <button className="button" onClick={openHistory}>
-              历史
+              {t("app.history")}
             </button>
             <button className="button primary" onClick={openNewConnection}>
-              ＋ 新建连接
+              {t("app.newConnection")}
             </button>
           </>
         )}
@@ -2763,6 +2808,7 @@ export function App() {
           profile={selectedProfile}
           status={displayedLockStatus}
           busy={productionLockBusy}
+          t={t}
           onUnlock={unlockProduction}
           onLock={lockProduction}
         />
@@ -2781,20 +2827,28 @@ export function App() {
           } as CSSProperties
         }
       >
-        <aside className="connections" aria-label="连接">
+        <aside className="connections" aria-label={t("workspace.connections")}>
           <button
             className="panel-toggle"
             aria-controls="connections-panel-content"
             aria-expanded={connectionsExpanded}
-            aria-label={connectionsExpanded ? "收起连接栏" : "展开连接栏"}
-            title={connectionsExpanded ? "收起连接栏" : "展开连接栏"}
+            aria-label={
+              connectionsExpanded
+                ? t("workspace.collapseConnections")
+                : t("workspace.expandConnections")
+            }
+            title={
+              connectionsExpanded
+                ? t("workspace.collapseConnections")
+                : t("workspace.expandConnections")
+            }
             onClick={() => toggleNavigationPanel("connections")}
           >
             <span aria-hidden="true">{connectionsExpanded ? "‹" : "›"}</span>
           </button>
           {!connectionsExpanded && (
             <span className="panel-rail-label" aria-hidden="true">
-              连接
+              {t("workspace.connections")}
             </span>
           )}
           <div
@@ -2802,11 +2856,11 @@ export function App() {
             className="panel-content"
             hidden={!connectionsExpanded}
           >
-            <div className="eyebrow">连接</div>
+            <div className="eyebrow">{t("workspace.connections")}</div>
             {profiles.length === 0 && (
               <div className="empty compact">
-                <b>还没有连接</b>
-                <span>添加 etcd、ZooKeeper 或 Nacos 后开始浏览。</span>
+                <b>{t("workspace.noConnections")}</b>
+                <span>{t("workspace.noConnectionsHelp")}</span>
               </div>
             )}
             {profiles.map((profile) => (
@@ -2823,7 +2877,7 @@ export function App() {
                   <b>{profile.name}</b>
                   <small>
                     {profile.endpoint} ·{" "}
-                    {connectionEnvironmentLabels[profile.environment]}
+                    {connectionEnvironmentLabel(locale, profile.environment)}
                   </small>
                 </span>
                 <span className={`badge ${profile.adapter}`}>
@@ -2838,12 +2892,14 @@ export function App() {
                 disabled={busy}
                 onClick={() => void connectAndLoad(selectedProfile)}
               >
-                {busy ? "连接中…" : "连接并浏览"}
+                {busy
+                  ? t("workspace.connecting")
+                  : t("workspace.connectAndBrowse")}
               </button>
             )}
             {!demoMode && selectedSession && (
               <button className="button wide" onClick={() => void disconnect()}>
-                断开连接
+                {t("workspace.disconnect")}
               </button>
             )}
             {!demoMode && selectedProfile && (
@@ -2853,20 +2909,20 @@ export function App() {
                   disabled={busy}
                   onClick={openEditConnection}
                 >
-                  编辑
+                  {t("workspace.edit")}
                 </button>
                 <button
                   className="button"
                   disabled={busy}
                   onClick={openCopyConnection}
                 >
-                  复制
+                  {t("workspace.copy")}
                 </button>
               </div>
             )}
             {!demoMode && (
               <button className="button wide" onClick={openNewConnection}>
-                ＋ 添加连接
+                {t("workspace.addConnection")}
               </button>
             )}
 
@@ -2889,7 +2945,7 @@ export function App() {
             <div
               className="panel-resizer"
               role="separator"
-              aria-label="调整连接栏宽度"
+              aria-label={t("workspace.resizeConnections")}
               aria-orientation="vertical"
               aria-valuemin={PANEL_WIDTH_LIMITS.connections.min}
               aria-valuenow={panelLayout.widths.connections}
@@ -2905,20 +2961,28 @@ export function App() {
           )}
         </aside>
 
-        <section className="tree" aria-label="资源">
+        <section className="tree" aria-label={t("workspace.resources")}>
           <button
             className="panel-toggle"
             aria-controls="resources-panel-content"
             aria-expanded={resourcesExpanded}
-            aria-label={resourcesExpanded ? "收起资源栏" : "展开资源栏"}
-            title={resourcesExpanded ? "收起资源栏" : "展开资源栏"}
+            aria-label={
+              resourcesExpanded
+                ? t("workspace.collapseResources")
+                : t("workspace.expandResources")
+            }
+            title={
+              resourcesExpanded
+                ? t("workspace.collapseResources")
+                : t("workspace.expandResources")
+            }
             onClick={() => toggleNavigationPanel("resources")}
           >
             <span aria-hidden="true">{resourcesExpanded ? "‹" : "›"}</span>
           </button>
           {!resourcesExpanded && (
             <span className="panel-rail-label" aria-hidden="true">
-              资源
+              {t("workspace.resources")}
             </span>
           )}
           <div
@@ -2927,12 +2991,12 @@ export function App() {
             hidden={!resourcesExpanded}
           >
             <div className="tree-header">
-              <b>{selectedProfile?.name ?? "资源"}</b>
+              <b>{selectedProfile?.name ?? t("workspace.resources")}</b>
               <button
                 className="icon-button import-resource"
                 disabled={demoMode || !selectedSession || busy || !writeAllowed}
                 onClick={() => void chooseImportFile()}
-                title="从 Atlas JSON 导入"
+                title={t("workspace.import")}
               >
                 ⇧
               </button>
@@ -2964,7 +3028,7 @@ export function App() {
                 className="icon-button create-resource"
                 disabled={demoMode || !selectedSession || busy || !writeAllowed}
                 onClick={openCreateResource}
-                title="新建资源"
+                title={t("workspace.createResource")}
               >
                 ＋
               </button>
@@ -2972,7 +3036,7 @@ export function App() {
                 className="icon-button"
                 disabled={!selectedSession || busy}
                 onClick={() => void refreshRoot()}
-                title="刷新"
+                title={t("workspace.refresh")}
               >
                 ↻
               </button>
@@ -2980,7 +3044,7 @@ export function App() {
                 <input
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
-                  placeholder="筛选当前已加载资源…"
+                  placeholder={t("workspace.filterLoaded")}
                 />
               )}
               <div className="resource-query">
@@ -2993,10 +3057,10 @@ export function App() {
                   }}
                   placeholder={
                     selectedProfile?.adapter === "nacos"
-                      ? "模糊搜索 group 或 dataId；定位请填 GROUP / dataId"
+                      ? t("workspace.searchNacos")
                       : selectedProfile?.adapter === "zookeeper"
-                        ? "搜索节点名；定位请填 /绝对路径"
-                        : "搜索 key；定位可填 key 或 base64:…"
+                        ? t("workspace.searchZookeeper")
+                        : t("workspace.searchEtcd")
                   }
                 />
                 <button
@@ -3004,28 +3068,34 @@ export function App() {
                   disabled={!selectedSession || busy}
                   onClick={() => void searchCurrentScope()}
                 >
-                  搜索
+                  {t("workspace.search")}
                 </button>
                 <button
                   className="button"
                   disabled={!selectedSession || busy}
                   onClick={() => void locateResource()}
                 >
-                  定位
+                  {t("workspace.locate")}
                 </button>
               </div>
               {activeSearch && (
                 <div className="search-state">
                   <span>
-                    “{activeSearch.query}” · 已检查 {activeSearch.scanned}{" "}
-                    个标识
+                    {t("workspace.searchState", {
+                      query: activeSearch.query,
+                      count: activeSearch.scanned,
+                    })}
                     {selectedProfile?.adapter === "nacos"
-                      ? ` · 第 ${nacosSearchPageIndex + 1} 页`
+                      ? ` · ${t("workspace.page", {
+                          page: nacosSearchPageIndex + 1,
+                        })}`
                       : ""}
-                    {activeSearch.exhaustive ? " · 已完成" : ""}
+                    {activeSearch.exhaustive
+                      ? ` · ${t("workspace.complete")}`
+                      : ""}
                   </span>
                   <button disabled={busy} onClick={() => void exitSearch()}>
-                    返回资源树
+                    {t("workspace.backToTree")}
                   </button>
                 </div>
               )}
@@ -3034,8 +3104,8 @@ export function App() {
             {!selectedSession && (
               <div className="empty">
                 <span className="empty-icon">◇</span>
-                <b>选择并打开连接</b>
-                <span>资源会按需加载，不会扫描整个集群。</span>
+                <b>{t("workspace.selectConnection")}</b>
+                <span>{t("workspace.lazyHelp")}</span>
               </div>
             )}
             {selectedSession && rows.length === 0 && !busy && (
@@ -3044,16 +3114,16 @@ export function App() {
                 <b>
                   {activeSearch
                     ? currentNacosSearchPage?.nextCursor
-                      ? "本页结果去重后为空"
-                      : "没有匹配的资源"
-                    : "当前范围没有资源"}
+                      ? t("workspace.dedupedEmpty")
+                      : t("workspace.noMatches")
+                    : t("workspace.noResources")}
                 </b>
                 <span>
                   {activeSearch
                     ? currentNacosSearchPage?.nextCursor
-                      ? "可继续下一页；搜索不会读取资源值。"
-                      : "可调整标识关键词，搜索不会读取资源值。"
-                    : "可以刷新，或检查所选 namespace 和权限。"}
+                      ? t("workspace.nextPageHelp")
+                      : t("workspace.adjustSearchHelp")
+                    : t("workspace.emptyHelp")}
                 </span>
               </div>
             )}
@@ -3067,7 +3137,7 @@ export function App() {
                     key={`more-${row.cursor}`}
                     onClick={() => void loadMore(actualIndex, row)}
                   >
-                    … 加载更多
+                    {t("workspace.loadMore")}
                   </button>
                 );
               }
@@ -3135,15 +3205,19 @@ export function App() {
                         showCachedNacosSearchPage(nacosSearchPageIndex - 1)
                       }
                     >
-                      上一页
+                      {t("common.previousPage")}
                     </button>
-                    <span>第 {nacosSearchPageIndex + 1} 页</span>
+                    <span>
+                      {t("workspace.page", {
+                        page: nacosSearchPageIndex + 1,
+                      })}
+                    </span>
                     <button
                       className="button"
                       disabled={busy || !currentNacosSearchPage?.nextCursor}
                       onClick={() => void loadNextNacosSearchPage()}
                     >
-                      下一页
+                      {t("common.nextPage")}
                     </button>
                   </>
                 ) : (
@@ -3155,10 +3229,13 @@ export function App() {
                         void loadNacosListPage(nacosPageNumber - 1)
                       }
                     >
-                      上一页
+                      {t("common.previousPage")}
                     </button>
                     <span>
-                      第 {nacosPageNumber} / {nacosTotalPages} 页
+                      {t("workspace.pageOf", {
+                        page: nacosPageNumber,
+                        total: nacosTotalPages,
+                      })}
                     </span>
                     <button
                       className="button"
@@ -3167,7 +3244,7 @@ export function App() {
                         void loadNacosListPage(nacosPageNumber + 1)
                       }
                     >
-                      下一页
+                      {t("common.nextPage")}
                     </button>
                   </>
                 )}
@@ -3175,10 +3252,12 @@ export function App() {
             )}
             {busy && (
               <div className="loading-line">
-                {demoMode ? "正在加载合成数据…" : "正在与注册中心通信…"}{" "}
+                {demoMode
+                  ? t("workspace.loadingDemo")
+                  : t("workspace.loadingRegistry")}{" "}
                 {activeOperation && (
                   <button onClick={() => void cancelActiveOperation()}>
-                    取消
+                    {t("common.cancel")}
                   </button>
                 )}
               </div>
@@ -3188,7 +3267,7 @@ export function App() {
             <div
               className="panel-resizer"
               role="separator"
-              aria-label="调整资源栏宽度"
+              aria-label={t("workspace.resizeResources")}
               aria-orientation="vertical"
               aria-valuemin={PANEL_WIDTH_LIMITS.resources.min}
               aria-valuenow={panelLayout.widths.resources}
@@ -3206,8 +3285,8 @@ export function App() {
           {!document ? (
             <div className="detail-empty">
               <span className="empty-icon large">{busy ? "◌" : "◇"}</span>
-              <h1>{busy ? "正在读取" : "选择一个资源"}</h1>
-              <p>资源值仅在选中时读取；二进制数据会以 Base64 无损展示。</p>
+              <h1>{busy ? t("resource.reading") : t("resource.select")}</h1>
+              <p>{t("resource.selectHelp")}</p>
             </div>
           ) : (
             <>
@@ -3227,7 +3306,7 @@ export function App() {
                       disabled={demoMode || busy}
                       onClick={openServerHistory}
                     >
-                      服务端历史
+                      {t("resource.serverHistory")}
                     </button>
                   )}
                   {document.address.type === "nacosConfig" && (
@@ -3236,7 +3315,7 @@ export function App() {
                       disabled={demoMode || busy || !writeAllowed}
                       onClick={() => setNacosNativeOpen(true)}
                     >
-                      服务管理
+                      {t("resource.serviceManagement")}
                     </button>
                   )}
                   {document.address.type === "etcd" && (
@@ -3262,14 +3341,14 @@ export function App() {
                     disabled={demoMode || busy}
                     onClick={openExportDialog}
                   >
-                    导出
+                    {t("resource.export")}
                   </button>
                   <button
                     className="button"
                     disabled={busy}
                     onClick={openResourceComparison}
                   >
-                    比较 / 提升
+                    {t("resource.compare")}
                   </button>
                   <button
                     className="button danger"
@@ -3278,7 +3357,7 @@ export function App() {
                     }
                     onClick={prepareDelete}
                   >
-                    删除
+                    {t("resource.delete")}
                   </button>
                   <button
                     className="button primary"
@@ -3291,21 +3370,21 @@ export function App() {
                     }
                     onClick={prepareUpdate}
                   >
-                    安全变更
+                    {t("resource.safeChange")}
                   </button>
                 </div>
               </div>
               <div className="stats">
                 <div>
-                  <span>版本</span>
+                  <span>{t("resource.version")}</span>
                   <strong>{document.version || "—"}</strong>
                 </div>
                 <div>
-                  <span>编码</span>
+                  <span>{t("resource.encoding")}</span>
                   <strong>{document.value.encoding.toUpperCase()}</strong>
                 </div>
                 <div>
-                  <span>大小</span>
+                  <span>{t("resource.size")}</span>
                   <strong>{document.value.sizeBytes.toLocaleString()} B</strong>
                 </div>
               </div>
@@ -3317,20 +3396,37 @@ export function App() {
                   <div>
                     <b>
                       {resourceWatch
-                        ? watchStatusLabels[resourceWatch.state]
-                        : "实时监听未开启"}
+                        ? t(watchStatusKeys[resourceWatch.state])
+                        : t("resource.watchIdle")}
                     </b>
                     <span>
                       {resourceWatch?.message
-                        ? `${resourceWatch.message}${resourceWatch.retryInMs ? ` · ${resourceWatch.retryInMs} ms 后重试` : ""}`
+                        ? `${resourceWatch.message}${
+                            resourceWatch.retryInMs
+                              ? t("resource.watchRetry", {
+                                  milliseconds: resourceWatch.retryInMs,
+                                })
+                              : ""
+                          }`
                         : resourceWatch?.lastChange
-                          ? `${watchChangeLabels[resourceWatch.lastChange.change]} · 版本 ${resourceWatch.lastChange.version ?? "未知"}`
-                          : "监听事件只包含地址、类型和版本，不传输资源值"}
+                          ? t("resource.watchChange", {
+                              change: t(
+                                watchChangeKeys[
+                                  resourceWatch.lastChange.change
+                                ],
+                              ),
+                              version:
+                                resourceWatch.lastChange.version ??
+                                t("common.unknown"),
+                            })
+                          : t("resource.watchPrivacy")}
                     </span>
                   </div>
                   {resourceWatch && (
                     <span className="watch-count">
-                      {resourceWatch.changeCount} 次变化
+                      {t("resource.changeCount", {
+                        count: resourceWatch.changeCount,
+                      })}
                     </span>
                   )}
                 </div>
@@ -3341,7 +3437,7 @@ export function App() {
                       disabled={busy}
                       onClick={() => void refreshWatchedResource()}
                     >
-                      读取最新版本
+                      {t("resource.readLatest")}
                     </button>
                   )}
                   <button
@@ -3354,22 +3450,22 @@ export function App() {
                     }
                   >
                     {watchBackendIsActive
-                      ? "停止监听"
+                      ? t("resource.stopWatch")
                       : resourceWatch
-                        ? "重新监听"
-                        : "开始监听"}
+                        ? t("resource.restartWatch")
+                        : t("resource.startWatch")}
                   </button>
                 </div>
               </div>
               {document.value.encoding === "base64" && (
                 <div className="binary-warning">
-                  该值不是有效 UTF-8，已使用 Base64 展示，内容没有被替换或损坏。
+                  {t("resource.binaryWarning")}
                 </div>
               )}
               <div className="editor-header">
                 <div className="editor-language-controls">
                   <select
-                    aria-label="编辑器语言"
+                    aria-label={t("resource.editorLanguage")}
                     value={editorLanguage}
                     disabled={busy || document.value.encoding === "base64"}
                     onChange={(event) => {
@@ -3392,13 +3488,15 @@ export function App() {
                     disabled={busy || document.value.encoding === "base64"}
                     onClick={validateEditorContent}
                   >
-                    校验语法
+                    {t("resource.validateSyntax")}
                   </button>
                 </div>
                 <span>
                   {draftValue === document.value.content
                     ? document.value.encoding.toUpperCase()
-                    : `${document.value.encoding.toUpperCase()} · 已修改`}
+                    : `${document.value.encoding.toUpperCase()} · ${t(
+                        "resource.modified",
+                      )}`}
                 </span>
               </div>
               <ConfigEditor
@@ -3413,8 +3511,11 @@ export function App() {
               />
               {validationIssue && (
                 <div className="validation-error">
-                  第 {validationIssue.line} 行，第 {validationIssue.column} 列：
-                  {validationIssue.message}
+                  {t("resource.validationLocation", {
+                    line: validationIssue.line,
+                    column: validationIssue.column,
+                    message: validationIssue.message,
+                  })}
                 </div>
               )}
               <div className="metadata">
@@ -3430,16 +3531,26 @@ export function App() {
         </main>
       </div>
 
-      {toast && <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />}
+      {toast && (
+        <Toast
+          key={toast.id}
+          toast={toast}
+          dismissLabel={t("common.dismissNotice")}
+          onDismiss={dismissToast}
+        />
+      )}
 
       {!demoMode && settingsOpen && (
         <SettingsDialog
           settings={updateProxySettings}
-          onSave={(settings) => {
+          locale={locale}
+          t={t}
+          onSave={(settings, nextLocale) => {
             const saved = saveUpdateProxySettings(settings);
             setUpdateProxySettings(saved);
+            setLocale(saveAppLocale(nextLocale));
             setSettingsOpen(false);
-            showSuccess("更新网络设置已保存");
+            showSuccess(createTranslator(nextLocale)("settings.saved"));
           }}
           onCancel={() => setSettingsOpen(false)}
         />
@@ -3462,6 +3573,8 @@ export function App() {
           secret={connectionSecret}
           busy={busy}
           testing={testingConnection}
+          locale={locale}
+          t={t}
           onChange={setForm}
           onSecretChange={setConnectionSecret}
           onCancel={() => setDialogOpen(false)}

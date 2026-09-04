@@ -10,10 +10,11 @@ const toastIcons = {
 
 type ToastProps = {
   toast: ToastMessage;
+  dismissLabel: string;
   onDismiss: (id: number) => void;
 };
 
-export function Toast({ toast, onDismiss }: ToastProps) {
+export function Toast({ toast, dismissLabel, onDismiss }: ToastProps) {
   const autoDismiss = toastAutoDismisses(toast.tone);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -60,7 +61,7 @@ export function Toast({ toast, onDismiss }: ToastProps) {
       <button
         className="toast__close"
         type="button"
-        aria-label="关闭提示"
+        aria-label={dismissLabel}
         onClick={() => onDismiss(toast.id)}
       >
         ×

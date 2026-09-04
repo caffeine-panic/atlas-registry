@@ -65,6 +65,38 @@ test("registry error messages remain safe for unknown rejection values", () => {
   assert.equal(errors.registryErrorMessage(undefined), "undefined");
 });
 
+test("structured registry errors have a complete English read-only surface", () => {
+  const codes = [
+    "validation",
+    "notConnected",
+    "unsupported",
+    "notFound",
+    "network",
+    "invalidResponse",
+    "timeout",
+    "valueTooLarge",
+    "conflict",
+    "outcomeUnknown",
+    "permissionDenied",
+    "resourceExhausted",
+    "auditIncomplete",
+    "credentialMissing",
+    "credentialStore",
+    "tlsConfiguration",
+    "storage",
+    "cancelled",
+    "productionLocked",
+  ];
+  for (const code of codes) {
+    const localized = errors.registryErrorMessage(
+      { code, message: "不应显示的后端消息", retryable: false },
+      "en",
+    );
+    assert.match(localized, /[A-Za-z]/);
+    assert.doesNotMatch(localized, /不应显示/);
+  }
+});
+
 test("mutation failures select recovery behavior from structured codes", () => {
   const failure = (code) => ({ code, message: "translated", retryable: false });
   assert.equal(

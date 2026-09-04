@@ -23,6 +23,7 @@ _The screenshot is generated from the built-in read-only demo workspace. All pro
 - **Safe Change Center, not a save button.** Existing-resource updates show a bounded before/after diff, authoritative preflight, protocol concurrency token, explicit confirmation, conditional apply, authoritative readback, and a redacted review receipt.
 - **Production is read-only by default.** Production profiles require an audited, session-only 5–60 minute write window; expiry, disconnect, or app restart immediately restores the lock.
 - **Compare environments before promoting.** Read one exact resource from another open connection, distinguish text/binary and failure states, then refresh both sides before handing the target token and source bytes to Safe Change Center.
+- **Connect-to-inspect in English or Simplified Chinese.** The first launch follows supported Simplified Chinese system locales and otherwise defaults to English; the explicit choice in Settings is stored locally and separately from profiles and credentials.
 - **Secrets and values stay contained.** Credentials live in the operating system keychain; audit records, watch events, errors, and diagnostics exclude values and tokens, while exports omit values by default.
 
 ## Install
@@ -78,6 +79,8 @@ The suite exercises browsing, guarded mutations, watches, conflicts, and protoco
 6. If Atlas Registry reports an unknown outcome, refresh or verify the server state before taking another action.
 
 The demo workspace is deliberately isolated from Tauri IPC, the network, browser storage, and local connection profiles. It can also be opened deterministically with `?demo=1`, which powers the repository screenshot workflow.
+
+Choose **Settings → Interface language** to switch between English and Simplified Chinese. Atlas Registry never translates or rewrites protocol names, resource identifiers, metadata names, or server-provided values.
 
 ## Known limitations
 
