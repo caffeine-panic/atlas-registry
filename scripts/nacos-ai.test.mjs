@@ -43,6 +43,7 @@ test("the Nacos 3 explorer is capability-gated and visibly read-only", () => {
 test("AI metadata is bounded and payload fields stay behind the Rust IPC boundary", () => {
   assert.match(backend, /MAX_RESPONSE_BYTES: usize = 512 \* 1024/);
   assert.match(backend, /MAX_METADATA_BYTES: usize = 16 \* 1024/);
+  assert.equal((backend.match(/\("search", "accurate"/g) ?? []).length, 2);
   assert.match(backend, /SAFE_FIELDS/);
   assert.doesNotMatch(
     backend.match(/const SAFE_FIELDS:[\s\S]*?\];/)?.[0] ?? "",

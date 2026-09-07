@@ -63,6 +63,7 @@ pub(super) async fn list_assets(
             .native_request(Method::GET, list_path(kind))
             .query(&[
                 ("namespaceId", session.namespace_id().to_owned()),
+                ("search", "accurate".to_owned()),
                 ("pageNo", page_no.to_string()),
                 ("pageSize", page_size.to_string()),
             ]),
@@ -136,6 +137,7 @@ async fn probe_family(
         .native_request(Method::GET, list_path(kind))
         .query(&[
             ("namespaceId", session.namespace_id()),
+            ("search", "accurate"),
             ("pageNo", "1"),
             ("pageSize", "1"),
         ])
