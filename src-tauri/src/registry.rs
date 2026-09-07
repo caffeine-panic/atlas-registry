@@ -1985,6 +1985,7 @@ pub enum RegistryErrorCode {
     Storage,
     Cancelled,
     ProductionLocked,
+    SessionExpired,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -2016,6 +2017,10 @@ impl RegistryError {
 
     pub(crate) fn network(message: impl Into<String>) -> Self {
         Self::new(RegistryErrorCode::Network, message, true)
+    }
+
+    pub(crate) fn session_expired(message: impl Into<String>) -> Self {
+        Self::new(RegistryErrorCode::SessionExpired, message, false)
     }
 
     pub(crate) fn not_found(message: impl Into<String>) -> Self {

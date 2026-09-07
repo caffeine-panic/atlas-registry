@@ -80,13 +80,14 @@ flowchart LR
 
 [registry.rs](../src-tauri/src/registry.rs) 定义 `RegistryCatalog`（adapter descriptor 与能力声明）、`RegistryService`（会话表、操作取消、监听注册）以及全部 DTO 与校验。`registry/` 子模块按职责拆分：
 
-| 模块                                 | 职责                                                                                      |
-| ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `registry/adapters.rs` + `adapters/` | 三协议客户端封装成统一的 `RegistrySession`，含 Nacos 用户密码、MSE AccessKey 与自定义鉴权 |
-| `registry/ssh_tunnel.rs`             | etcd 单跳 SSH 握手、主机密钥固定、认证、端口转发与有界清理                                |
-| `registry/mutations.rs`              | 条件变更执行与前后快照                                                                    |
-| `registry/watch.rs`                  | 监听生命周期、断线恢复、Nacos 5 秒 MD5 对账                                               |
-| `registry/nacos_native.rs`           | namespace / service / instance 管理与有界回读确认                                         |
+| 模块                                   | 职责                                                                                      |
+| -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `registry/adapters.rs` + `adapters/`   | 三协议客户端封装成统一的 `RegistrySession`，含 Nacos 用户密码、MSE AccessKey 与自定义鉴权 |
+| `registry/ssh_tunnel.rs`               | etcd 单跳 SSH 握手、主机密钥固定、认证、端口转发与有界清理                                |
+| `registry/adapters/zookeeper_error.rs` | ZooKeeper 认证拒绝、会话过期、超时与传输错误的脱敏结构化映射                              |
+| `registry/mutations.rs`                | 条件变更执行与前后快照                                                                    |
+| `registry/watch.rs`                    | 监听生命周期、断线恢复、Nacos 5 秒 MD5 对账                                               |
+| `registry/nacos_native.rs`             | namespace / service / instance 管理与有界回读确认                                         |
 
 `audited_mutation.rs` 把「写前审计 → 远端变更 → 写后审计」编排成一个不可跳过的流程；所有 mutation 命令都经过它。
 

@@ -25,6 +25,7 @@ const registryErrorCodes = new Set<RegistryErrorCode>([
   "storage",
   "cancelled",
   "productionLocked",
+  "sessionExpired",
 ]);
 
 const englishRegistryErrors: Record<RegistryErrorCode, string> = {
@@ -51,6 +52,7 @@ const englishRegistryErrors: Record<RegistryErrorCode, string> = {
   cancelled: "The operation was cancelled",
   productionLocked:
     "This production connection is read-only; open a time-limited write window first",
+  sessionExpired: "The registry session expired; reconnect before continuing",
 };
 
 export function isRegistryError(
