@@ -1,4 +1,5 @@
 mod nacos_auth;
+mod zookeeper_error;
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
@@ -470,9 +471,9 @@ impl RegistrySession {
         } else {
             connector.connect(&profile.endpoint).await
         };
-        connection.map(Self::Zookeeper).map_err(|error| {
-            RegistryError::network(format!("ZooKeeper connection failed: {error}"))
-        })
+        connection
+            .map(Self::Zookeeper)
+            .map_err(zookeeper_error::map_connection_error)
     }
 
     async fn connect_nacos(

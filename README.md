@@ -39,6 +39,8 @@ Download the latest signed-update-compatible build from [GitHub Releases](https:
 
 The application can check for updates from the title bar. Update artifacts are verified locally before installation. Operating-system installer signing status is documented in each release.
 
+Current public installers do not have Apple Developer ID/notarization or Windows Authenticode signing. macOS uses ad-hoc signing; macOS and Windows may warn or block installation. Tauri update signatures verify update artifacts, not operating-system publisher trust. Use only the official release assets and review the release notes before installing.
+
 For an SSH-only etcd endpoint, enable **Connect through an SSH tunnel** in the connection form, enter the bastion details, and pin the fingerprint reported by your administrator. SSH passwords and private-key passphrases are stored separately in the operating-system credential vault; Atlas Registry rejects a changed host key instead of silently trusting it.
 
 ## Protocol-native operations
