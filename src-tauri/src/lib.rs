@@ -124,9 +124,10 @@ async fn upsert_connection_profile<R: tauri::Runtime>(
     credentials: State<'_, CredentialVault>,
     profile: ConnectionProfile,
     credential_update: CredentialUpdate,
+    ssh_credential_update: CredentialUpdate,
 ) -> Result<Vec<ConnectionProfile>, RegistryError> {
     ConnectionStore::new(connection_profiles_path(&app)?, credentials.inner().clone())
-        .upsert(profile, credential_update)
+        .upsert(profile, credential_update, ssh_credential_update)
         .await
 }
 
@@ -1963,9 +1964,19 @@ mod command_tests {
                             "clientCertificatePath": "",
                             "clientKeyPath": "",
                             "serverName": ""
+                        },
+                        "sshTunnel": {
+                            "enabled": false,
+                            "host": "",
+                            "port": 22,
+                            "username": "",
+                            "authentication": "password",
+                            "privateKeyPath": "",
+                            "hostKeyFingerprint": ""
                         }
                     },
-                    "credentialUpdate": { "operation": "preserve" }
+                    "credentialUpdate": { "operation": "preserve" },
+                    "sshCredentialUpdate": { "operation": "preserve" }
                 }),
             ),
         )

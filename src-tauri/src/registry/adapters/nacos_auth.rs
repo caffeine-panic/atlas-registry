@@ -542,6 +542,7 @@ mod tests {
                 custom_key: String::new(),
             },
             tls: Default::default(),
+            ssh_tunnel: Default::default(),
         };
         let secret = Arc::new(ConnectionSecret::new("SECRET_REDACTED"));
         let configuration = configure(

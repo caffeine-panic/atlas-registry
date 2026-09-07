@@ -1,6 +1,7 @@
 mod adapters;
 mod mutations;
 mod nacos_native;
+mod ssh_tunnel;
 mod watch;
 
 use std::{
@@ -19,7 +20,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{RwLock, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::credentials::ConnectionSecret;
+use crate::credentials::ConnectionCredentials;
 use adapters::RegistrySession;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -557,6 +558,55 @@ pub struct TlsProfile {
     pub server_name: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum SshAuthenticationMode {
+    #[default]
+    Password,
+    PrivateKey,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SshTunnelProfile {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default = "default_ssh_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub authentication: SshAuthenticationMode,
+    #[serde(default)]
+    pub private_key_path: String,
+    #[serde(default)]
+    pub host_key_fingerprint: String,
+}
+
+impl Default for SshTunnelProfile {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: String::new(),
+            port: default_ssh_port(),
+            username: String::new(),
+            authentication: SshAuthenticationMode::Password,
+            private_key_path: String::new(),
+            host_key_fingerprint: String::new(),
+        }
+    }
+}
+
+const fn default_ssh_port() -> u16 {
+    22
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -576,6 +626,8 @@ pub struct ConnectionProfile {
     pub auth: ConnectionAuth,
     #[serde(default)]
     pub tls: TlsProfile,
+    #[serde(default)]
+    pub ssh_tunnel: SshTunnelProfile,
 }
 
 impl ConnectionProfile {
@@ -590,6 +642,11 @@ impl ConnectionProfile {
         self.tls.client_certificate_path = self.tls.client_certificate_path.trim().to_owned();
         self.tls.client_key_path = self.tls.client_key_path.trim().to_owned();
         self.tls.server_name = self.tls.server_name.trim().to_owned();
+        self.ssh_tunnel.host = self.ssh_tunnel.host.trim().to_owned();
+        self.ssh_tunnel.username = self.ssh_tunnel.username.trim().to_owned();
+        self.ssh_tunnel.private_key_path = self.ssh_tunnel.private_key_path.trim().to_owned();
+        self.ssh_tunnel.host_key_fingerprint =
+            self.ssh_tunnel.host_key_fingerprint.trim().to_owned();
 
         if self.id.is_empty() {
             return Err(RegistryError::validation("connection id cannot be blank"));
@@ -649,6 +706,44 @@ impl ConnectionProfile {
             return Err(RegistryError::validation(
                 "ZooKeeper derives the TLS server name from each endpoint; an override is not supported",
             ));
+        }
+        if self.ssh_tunnel.enabled {
+            if self.adapter != AdapterId::Etcd {
+                return Err(RegistryError::validation(
+                    "SSH tunnels are currently supported only for etcd connections",
+                ));
+            }
+            if self.endpoint.contains(',') {
+                return Err(RegistryError::validation(
+                    "an SSH-tunneled etcd profile requires exactly one endpoint",
+                ));
+            }
+            if self.ssh_tunnel.host.is_empty()
+                || self.ssh_tunnel.username.is_empty()
+                || self.ssh_tunnel.port == 0
+            {
+                return Err(RegistryError::validation(
+                    "SSH host, port, and username are required",
+                ));
+            }
+            if self.ssh_tunnel.authentication == SshAuthenticationMode::PrivateKey
+                && self.ssh_tunnel.private_key_path.is_empty()
+            {
+                return Err(RegistryError::validation(
+                    "SSH private-key authentication requires a private key path",
+                ));
+            }
+            if !self.ssh_tunnel.host_key_fingerprint.starts_with("SHA256:")
+                || self
+                    .ssh_tunnel
+                    .host_key_fingerprint
+                    .chars()
+                    .any(char::is_whitespace)
+            {
+                return Err(RegistryError::validation(
+                    "SSH host key fingerprint must use the SHA256:<base64> format",
+                ));
+            }
         }
         Ok(())
     }
@@ -1885,6 +1980,7 @@ pub enum RegistryErrorCode {
     AuditIncomplete,
     CredentialMissing,
     CredentialStore,
+    SshHostKey,
     TlsConfiguration,
     Storage,
     Cancelled,
@@ -1958,6 +2054,10 @@ impl RegistryError {
         Self::new(RegistryErrorCode::CredentialStore, message, true)
     }
 
+    pub(crate) fn ssh_host_key(message: impl Into<String>) -> Self {
+        Self::new(RegistryErrorCode::SshHostKey, message, false)
+    }
+
     pub(crate) fn tls_configuration(message: impl Into<String>) -> Self {
         Self::new(RegistryErrorCode::TlsConfiguration, message, false)
     }
@@ -1965,7 +2065,7 @@ impl RegistryError {
     pub(crate) fn timeout(operation: &str) -> Self {
         Self::new(
             RegistryErrorCode::Timeout,
-            format!("{operation} timed out after 8 seconds"),
+            format!("{operation} timed out"),
             true,
         )
     }
@@ -2072,7 +2172,7 @@ impl RegistryService {
         let adapter = profile.adapter;
         let endpoint = profile.endpoint.clone();
         self.run_operation(operation_id, async move {
-            RegistrySession::connect(&profile, None).await?;
+            RegistrySession::connect(&profile, ConnectionCredentials::default()).await?;
             Ok(ConnectionProbe { adapter, endpoint })
         })
         .await
@@ -2082,13 +2182,13 @@ impl RegistryService {
         &self,
         operation_id: OperationId,
         mut profile: ConnectionProfile,
-        secret: Option<ConnectionSecret>,
+        credentials: ConnectionCredentials,
     ) -> Result<ConnectionProbe, RegistryError> {
         profile.validate()?;
         let adapter = profile.adapter;
         let endpoint = profile.endpoint.clone();
         self.run_operation(operation_id, async move {
-            RegistrySession::connect(&profile, secret).await?;
+            RegistrySession::connect(&profile, credentials).await?;
             Ok(ConnectionProbe { adapter, endpoint })
         })
         .await
@@ -2099,16 +2199,17 @@ impl RegistryService {
         mut profile: ConnectionProfile,
     ) -> Result<ConnectionSession, RegistryError> {
         profile.validate()?;
-        self.open_with_credentials(profile, None).await
+        self.open_with_credentials(profile, ConnectionCredentials::default())
+            .await
     }
 
     pub async fn open_with_credentials(
         &self,
         mut profile: ConnectionProfile,
-        secret: Option<ConnectionSecret>,
+        credentials: ConnectionCredentials,
     ) -> Result<ConnectionSession, RegistryError> {
         profile.validate()?;
-        let session = RegistrySession::connect(&profile, secret).await?;
+        let session = RegistrySession::connect(&profile, credentials).await?;
         let write_access = ConnectionWriteAccess::new(profile.name.clone(), profile.environment);
         let summary = ConnectionSession {
             id: profile.id.clone(),
@@ -2141,11 +2242,11 @@ impl RegistryService {
         &self,
         operation_id: OperationId,
         profile: ConnectionProfile,
-        secret: Option<ConnectionSecret>,
+        credentials: ConnectionCredentials,
     ) -> Result<ConnectionSession, RegistryError> {
         let service = self.clone();
         self.run_operation(operation_id, async move {
-            service.open_with_credentials(profile, secret).await
+            service.open_with_credentials(profile, credentials).await
         })
         .await
     }

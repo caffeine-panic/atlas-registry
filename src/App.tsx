@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { planProfileSelection } from "./profileSelection";
+import { planSshCredential } from "./sshCredentialPlan";
 import { useRegistryOperations } from "./useRegistryOperations";
 import { useResourceWorkspace } from "./useResourceWorkspace";
 import {
@@ -234,6 +235,15 @@ const emptyForm = (): ConnectionProfile => ({
     clientKeyPath: "",
     serverName: "",
   },
+  sshTunnel: {
+    enabled: false,
+    host: "",
+    port: 22,
+    username: "",
+    authentication: "password",
+    privateKeyPath: "",
+    hostKeyFingerprint: "",
+  },
 });
 
 const emptyResourceDraft = (adapter: AdapterId): NewResourceDraft => ({
@@ -266,6 +276,13 @@ function normalizedProfile(profile: ConnectionProfile): ConnectionProfile {
       clientCertificatePath: profile.tls.clientCertificatePath.trim(),
       clientKeyPath: profile.tls.clientKeyPath.trim(),
       serverName: profile.tls.serverName.trim(),
+    },
+    sshTunnel: {
+      ...profile.sshTunnel,
+      host: profile.sshTunnel.host.trim(),
+      username: profile.sshTunnel.username.trim(),
+      privateKeyPath: profile.sshTunnel.privateKeyPath.trim(),
+      hostKeyFingerprint: profile.sshTunnel.hostKeyFingerprint.trim(),
     },
   };
 }
@@ -424,6 +441,7 @@ export function App() {
   const [testingConnection, setTestingConnection] = useState(false);
   const [form, setForm] = useState<ConnectionProfile>(emptyForm);
   const [connectionSecret, setConnectionSecret] = useState("");
+  const [sshSecret, setSshSecret] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [resourceDraft, setResourceDraft] = useState<NewResourceDraft>(() =>
     emptyResourceDraft("etcd"),
@@ -1096,6 +1114,7 @@ export function App() {
   const connectAndLoad = async (
     profile: ConnectionProfile,
     transientSecret?: string,
+    transientSshSecret?: string,
   ) => {
     await stopActiveWatch();
     await operations.cancel("serverHistory").catch(() => false);
@@ -1112,6 +1131,7 @@ export function App() {
           profile,
           operationId,
           transientSecret,
+          transientSshSecret,
         );
       } finally {
         finishOperation(operationId);
@@ -1131,6 +1151,11 @@ export function App() {
 
   const saveAndConnect = async () => {
     const candidate = normalizedProfile(form);
+    const storedProfile =
+      dialogMode === "edit"
+        ? profiles.find((profile) => profile.id === candidate.id)
+        : undefined;
+    const sshPlan = planSshCredential(candidate, storedProfile, sshSecret);
     if (!candidate.name || !candidate.endpoint) {
       showErrorText(t("connection.required"));
       return;
@@ -1143,6 +1168,10 @@ export function App() {
       showErrorText(t("connection.secretRequired"));
       return;
     }
+    if (sshPlan.missingPassword) {
+      showErrorText(t("connection.sshSecretRequired"));
+      return;
+    }
     try {
       const credentialUpdate =
         candidate.auth.mode === "none"
@@ -1150,14 +1179,21 @@ export function App() {
           : connectionSecret
             ? { operation: "replace" as const, secret: connectionSecret }
             : { operation: "preserve" as const };
+      const sshCredentialUpdate = sshPlan.update;
       const nextProfiles = await upsertConnectionProfile(
         candidate,
         credentialUpdate,
+        sshCredentialUpdate,
       );
       setProfiles(nextProfiles);
       setDialogOpen(false);
-      await connectAndLoad(candidate, connectionSecret || undefined);
+      await connectAndLoad(
+        candidate,
+        connectionSecret || undefined,
+        sshSecret || undefined,
+      );
       setConnectionSecret("");
+      setSshSecret("");
     } catch (reason) {
       showError(reason);
     }
@@ -1165,8 +1201,19 @@ export function App() {
 
   const testConnection = async () => {
     const candidate = normalizedProfile(form);
+    const sshPlan = planSshCredential(
+      candidate,
+      dialogMode === "edit"
+        ? profiles.find((profile) => profile.id === candidate.id)
+        : undefined,
+      sshSecret,
+    );
     if (!candidate.name || !candidate.endpoint) {
       showErrorText(t("connection.required"));
+      return;
+    }
+    if (sshPlan.missingPassword) {
+      showErrorText(t("connection.sshSecretRequired"));
       return;
     }
     setBusy(true);
@@ -1178,6 +1225,7 @@ export function App() {
         candidate,
         operationId,
         connectionSecret || undefined,
+        sshPlan.transient,
       );
       showSuccess(t("connection.testSucceeded", { endpoint: result.endpoint }));
     } catch (reason) {
@@ -2646,6 +2694,7 @@ export function App() {
     setDialogMode("new");
     setForm(emptyForm());
     setConnectionSecret("");
+    setSshSecret("");
     setDialogOpen(true);
   };
 
@@ -2654,6 +2703,7 @@ export function App() {
     setDialogMode("edit");
     setForm(structuredClone(selectedProfile));
     setConnectionSecret("");
+    setSshSecret("");
     setDialogOpen(true);
   };
 
@@ -2666,6 +2716,7 @@ export function App() {
       name: `${selectedProfile.name} 副本`,
     });
     setConnectionSecret("");
+    setSshSecret("");
     setDialogOpen(true);
   };
 
@@ -2705,6 +2756,7 @@ export function App() {
       }
       setDialogOpen(false);
       setConnectionSecret("");
+      setSshSecret("");
       showSuccess("连接和系统凭据已删除");
     } catch (reason) {
       showError(reason);
@@ -3571,12 +3623,14 @@ export function App() {
           mode={dialogMode}
           form={form}
           secret={connectionSecret}
+          sshSecret={sshSecret}
           busy={busy}
           testing={testingConnection}
           locale={locale}
           t={t}
           onChange={setForm}
           onSecretChange={setConnectionSecret}
+          onSshSecretChange={setSshSecret}
           onCancel={() => setDialogOpen(false)}
           onTest={() => void testConnection()}
           onSave={() => void saveAndConnect()}

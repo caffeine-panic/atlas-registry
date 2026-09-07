@@ -20,6 +20,8 @@ export type { ResourcePage } from "./generated/ResourcePage";
 export type { ResourceSearchField } from "./generated/ResourceSearchField";
 export type { ResourceSearchMatch } from "./generated/ResourceSearchMatch";
 export type { ResourceSearchPage } from "./generated/ResourceSearchPage";
+export type { SshAuthenticationMode } from "./generated/SshAuthenticationMode";
+export type { SshTunnelProfile } from "./generated/SshTunnelProfile";
 export type { WatchEvent } from "./generated/WatchEvent";
 export type { WatchStatusState } from "./generated/WatchStatusState";
 
@@ -495,10 +497,12 @@ export function loadConnectionProfiles() {
 export function upsertConnectionProfile(
   profile: ConnectionProfile,
   credentialUpdate: CredentialUpdate,
+  sshCredentialUpdate: CredentialUpdate,
 ) {
   return invoke<ConnectionProfile[]>("upsert_connection_profile", {
     profile,
     credentialUpdate,
+    sshCredentialUpdate,
   });
 }
 
@@ -512,11 +516,15 @@ export function probeConnection(
   profile: ConnectionProfile,
   operationId: string,
   secret?: string,
+  sshSecret?: string,
 ) {
   return invoke<ConnectionProbe>("probe_connection", {
     profile,
     operationId,
-    transientCredential: secret === undefined ? null : { secret },
+    transientCredential:
+      secret === undefined && sshSecret === undefined
+        ? null
+        : { secret: secret ?? null, sshSecret: sshSecret ?? null },
   });
 }
 
@@ -524,11 +532,15 @@ export function openConnection(
   profile: ConnectionProfile,
   operationId: string,
   secret?: string,
+  sshSecret?: string,
 ) {
   return invoke<ConnectionSession>("open_connection", {
     profile,
     operationId,
-    transientCredential: secret === undefined ? null : { secret },
+    transientCredential:
+      secret === undefined && sshSecret === undefined
+        ? null
+        : { secret: secret ?? null, sshSecret: sshSecret ?? null },
   });
 }
 

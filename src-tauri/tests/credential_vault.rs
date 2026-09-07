@@ -14,7 +14,7 @@ use atlas_registry_lib::{
     },
     registry::{
         AdapterId, AuthenticationMode, ConnectionAuth, ConnectionEnvironment, ConnectionProfile,
-        NacosApiVersion, RegistryErrorCode, TlsProfile,
+        NacosApiVersion, RegistryErrorCode, SshAuthenticationMode, SshTunnelProfile, TlsProfile,
     },
 };
 
@@ -114,10 +114,52 @@ fn transient_connection_credentials_override_without_being_persisted() {
         let resolved = vault
             .resolve(&profile, Some(TransientCredential::new("one-shot-secret")))
             .await
-            .expect("transient credential should resolve")
-            .expect("authenticated connection should have a secret");
+            .expect("transient credential should resolve");
 
-        assert_eq!(resolved.expose(), "one-shot-secret");
+        assert_eq!(
+            resolved
+                .registry()
+                .expect("authenticated connection should have a secret")
+                .expose(),
+            "one-shot-secret"
+        );
+        assert!(backend.values.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn transient_ssh_credentials_stay_separate_and_are_not_persisted() {
+    tauri::async_runtime::block_on(async {
+        let backend = Arc::new(MemoryBackend::default());
+        let vault = CredentialVault::new(backend.clone());
+        let mut profile = authenticated_etcd_profile("transient-ssh");
+        profile.auth = ConnectionAuth::default();
+        profile.ssh_tunnel = SshTunnelProfile {
+            enabled: true,
+            host: "bastion.internal".to_owned(),
+            port: 22,
+            username: "ssh-user".to_owned(),
+            authentication: SshAuthenticationMode::Password,
+            private_key_path: String::new(),
+            host_key_fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_owned(),
+        };
+
+        let resolved = vault
+            .resolve(
+                &profile,
+                Some(TransientCredential::default().with_ssh_secret("one-shot-ssh")),
+            )
+            .await
+            .expect("transient SSH credential should resolve");
+
+        assert!(resolved.registry().is_none());
+        assert_eq!(
+            resolved
+                .ssh()
+                .expect("SSH password should be available")
+                .expose(),
+            "one-shot-ssh"
+        );
         assert!(backend.values.lock().unwrap().is_empty());
     });
 }
@@ -146,11 +188,21 @@ fn connection_store_persists_only_non_secret_profile_data() {
             client_key_path: "/certs/client-key.pem".to_owned(),
             server_name: "etcd.internal".to_owned(),
         };
+        profile.ssh_tunnel = SshTunnelProfile {
+            enabled: true,
+            host: "bastion.internal".to_owned(),
+            port: 22,
+            username: "ssh-user".to_owned(),
+            authentication: SshAuthenticationMode::PrivateKey,
+            private_key_path: "/keys/id_ed25519".to_owned(),
+            host_key_fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_owned(),
+        };
 
         store
             .upsert(
                 profile.clone(),
                 CredentialUpdate::replace("TOP_SECRET_PASSWORD"),
+                CredentialUpdate::replace("TOP_SECRET_PASSPHRASE"),
             )
             .await
             .expect("profile and credential should save together");
@@ -159,11 +211,29 @@ fn connection_store_persists_only_non_secret_profile_data() {
         assert!(json.contains("atlas-user"));
         assert!(json.contains("/certs/client-key.pem"));
         assert!(!json.contains("TOP_SECRET_PASSWORD"));
+        assert!(!json.contains("TOP_SECRET_PASSPHRASE"));
+        let key_without_passphrase = vault
+            .resolve(
+                &profile,
+                Some(TransientCredential::default().with_ssh_secret("")),
+            )
+            .await
+            .expect("explicit empty passphrase bypasses saved credential");
+        assert!(key_without_passphrase.ssh().is_none());
         assert_eq!(store.load().await.unwrap(), vec![profile]);
         assert_eq!(
             vault.required("secure-etcd").await.unwrap().expose(),
             "TOP_SECRET_PASSWORD"
         );
+        {
+            let values = backend.values.lock().unwrap();
+            assert_eq!(values.len(), 2);
+            assert!(
+                values
+                    .values()
+                    .any(|value| value == "TOP_SECRET_PASSPHRASE")
+            );
+        }
 
         store.delete("secure-etcd").await.unwrap();
         assert!(store.load().await.unwrap().is_empty());
@@ -189,7 +259,11 @@ fn connection_store_rolls_back_profile_when_credential_update_fails() {
         let store = ConnectionStore::new(directory.join("connections.json"), vault.clone());
         let original = authenticated_etcd_profile("rollback-etcd");
         store
-            .upsert(original.clone(), CredentialUpdate::replace("old-secret"))
+            .upsert(
+                original.clone(),
+                CredentialUpdate::replace("old-secret"),
+                CredentialUpdate::clear(),
+            )
             .await
             .unwrap();
 
@@ -197,7 +271,11 @@ fn connection_store_rolls_back_profile_when_credential_update_fails() {
         replacement.name = "Must be rolled back".to_owned();
         backend.fail_next_write.store(true, Ordering::SeqCst);
         let error = store
-            .upsert(replacement, CredentialUpdate::replace("new-secret"))
+            .upsert(
+                replacement,
+                CredentialUpdate::replace("new-secret"),
+                CredentialUpdate::clear(),
+            )
             .await
             .expect_err("credential failure should reject the whole update");
 
@@ -226,5 +304,6 @@ fn authenticated_etcd_profile(id: &str) -> ConnectionProfile {
             custom_key: String::new(),
         },
         tls: TlsProfile::default(),
+        ssh_tunnel: Default::default(),
     }
 }

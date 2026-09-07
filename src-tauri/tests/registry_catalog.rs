@@ -207,6 +207,7 @@ fn connection_probe_rejects_a_blank_endpoint_before_using_a_protocol_client() {
             environment: Default::default(),
             auth: Default::default(),
             tls: Default::default(),
+            ssh_tunnel: Default::default(),
         },
     ))
     .expect_err("a blank endpoint must be rejected");
@@ -235,8 +236,9 @@ fn authenticated_probe_requires_a_secret_before_using_a_protocol_client() {
                     custom_key: String::new(),
                 },
                 tls: Default::default(),
+                ssh_tunnel: Default::default(),
             },
-            None,
+            Default::default(),
         ),
     )
     .expect_err("authenticated probes must not fall back to anonymous access");
@@ -264,10 +266,14 @@ fn mse_access_key_probe_requires_an_access_key_id_before_using_nacos() {
                     custom_key: String::new(),
                 },
                 tls: Default::default(),
+                ssh_tunnel: Default::default(),
             },
-            Some(atlas_registry_lib::credentials::ConnectionSecret::new(
-                "secret-key",
-            )),
+            atlas_registry_lib::credentials::ConnectionCredentials::new(
+                Some(atlas_registry_lib::credentials::ConnectionSecret::new(
+                    "secret-key",
+                )),
+                None,
+            ),
         ),
     )
     .expect_err("MSE AccessKey authentication requires an AccessKey ID");
@@ -292,4 +298,54 @@ fn legacy_connection_profiles_gain_safe_authentication_and_tls_defaults() {
     assert_eq!(profile.auth.mode, AuthenticationMode::None);
     assert_eq!(profile.tls, TlsProfile::default());
     assert!(!profile.tls.enabled);
+    assert!(!profile.ssh_tunnel.enabled);
+}
+
+#[test]
+fn ssh_tunnel_profiles_require_etcd_single_endpoint_and_a_pinned_host_key() {
+    let mut connection = ConnectionProfile {
+        id: "ssh-etcd".to_owned(),
+        name: "SSH etcd".to_owned(),
+        adapter: AdapterId::Etcd,
+        endpoint: "etcd-1:2379,etcd-2:2379".to_owned(),
+        namespace: String::new(),
+        nacos_api_version: NacosApiVersion::V2,
+        environment: Default::default(),
+        auth: Default::default(),
+        tls: Default::default(),
+        ssh_tunnel: serde_json::from_value(serde_json::json!({
+            "enabled": true,
+            "host": "bastion.example.com",
+            "port": 22,
+            "username": "operator",
+            "authentication": "password",
+            "privateKeyPath": "",
+            "hostKeyFingerprint": "not-pinned"
+        }))
+        .expect("SSH profile should deserialize"),
+    };
+
+    let first_error = tauri::async_runtime::block_on(
+        RegistryService::default().probe_with_credentials_cancellable(
+            OperationId::new("multi-endpoint-ssh".to_owned())
+                .expect("operation id should be valid"),
+            connection.clone(),
+            Default::default(),
+        ),
+    )
+    .expect_err("tunneled profiles must have one destination");
+    assert_eq!(first_error.code, RegistryErrorCode::Validation);
+    assert!(first_error.message.contains("exactly one endpoint"));
+
+    connection.endpoint = "etcd.internal:2379".to_owned();
+    let second_error = tauri::async_runtime::block_on(
+        RegistryService::default().probe_with_credentials_cancellable(
+            OperationId::new("unpinned-ssh".to_owned()).expect("operation id should be valid"),
+            connection,
+            Default::default(),
+        ),
+    )
+    .expect_err("tunneled profiles must pin a host key");
+    assert_eq!(second_error.code, RegistryErrorCode::Validation);
+    assert!(second_error.message.contains("SHA256"));
 }

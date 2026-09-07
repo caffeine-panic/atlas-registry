@@ -24,6 +24,7 @@ _The screenshot is generated from the built-in read-only demo workspace. All pro
 - **Production is read-only by default.** Production profiles require an audited, session-only 5–60 minute write window; expiry, disconnect, or app restart immediately restores the lock.
 - **Compare environments before promoting.** Read one exact resource from another open connection, distinguish text/binary and failure states, then refresh both sides before handing the target token and source bytes to Safe Change Center.
 - **Connect-to-inspect in English or Simplified Chinese.** The first launch follows supported Simplified Chinese system locales and otherwise defaults to English; the explicit choice in Settings is stored locally and separately from profiles and credentials.
+- **Reach private etcd without a sidecar.** An etcd profile can opt into a managed, single-hop SSH tunnel with a pinned SHA-256 host key and password or private-key authentication.
 - **Secrets and values stay contained.** Credentials live in the operating system keychain; audit records, watch events, errors, and diagnostics exclude values and tokens, while exports omit values by default.
 
 ## Install
@@ -37,6 +38,8 @@ Download the latest signed-update-compatible build from [GitHub Releases](https:
 | Linux    | DEB, RPM, and AppImage      |
 
 The application can check for updates from the title bar. Update artifacts are verified locally before installation. Operating-system installer signing status is documented in each release.
+
+For an SSH-only etcd endpoint, enable **Connect through an SSH tunnel** in the connection form, enter the bastion details, and pin the fingerprint reported by your administrator. SSH passwords and private-key passphrases are stored separately in the operating-system credential vault; Atlas Registry rejects a changed host key instead of silently trusting it.
 
 ## Protocol-native operations
 

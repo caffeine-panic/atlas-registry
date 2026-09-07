@@ -16,9 +16,8 @@ use nacos_sdk::api::{
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-use crate::credentials::ConnectionSecret;
+use crate::credentials::{ConnectionCredentials, ConnectionSecret};
 
-use super::nacos_native;
 use super::{
     AdapterId, AuthenticationMode, ConnectionProfile, EncodedValue, EtcdLeaseAction,
     EtcdLeaseActionResult, EtcdTransaction, EtcdTransactionResult, MutationPhase, MutationResult,
@@ -33,6 +32,7 @@ use super::{
         mutate_etcd, mutate_nacos, mutate_zookeeper,
     },
 };
+use super::{nacos_native, ssh_tunnel::ManagedSshTunnel};
 use nacos_auth::NacosRequestAuth;
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(8);
@@ -41,9 +41,21 @@ const MAX_ZOOKEEPER_CHILDREN: usize = 100_000;
 
 #[derive(Clone)]
 pub(super) enum RegistrySession {
-    Etcd(Box<etcd_client::Client>),
+    Etcd(EtcdSession),
     Zookeeper(zookeeper_client::Client),
     Nacos(NacosSession),
+}
+
+#[derive(Clone)]
+pub(super) struct EtcdSession {
+    client: Box<etcd_client::Client>,
+    _tunnel: Option<ManagedSshTunnel>,
+}
+
+impl EtcdSession {
+    pub(super) fn client(&self) -> etcd_client::Client {
+        self.client.as_ref().clone()
+    }
 }
 
 #[derive(Clone)]
@@ -88,24 +100,29 @@ impl RegistrySession {
 
     pub(super) async fn connect(
         profile: &ConnectionProfile,
-        secret: Option<ConnectionSecret>,
+        credentials: ConnectionCredentials,
     ) -> Result<Self, RegistryError> {
         if profile.endpoint.trim().is_empty() {
             return Err(RegistryError::validation("endpoint cannot be blank"));
         }
-        if profile.auth.mode != AuthenticationMode::None && secret.is_none() {
+        if profile.auth.mode != AuthenticationMode::None && credentials.registry.is_none() {
             return Err(RegistryError::credential_missing(format!(
                 "connection '{}' requires a credential",
                 profile.id
             )));
         }
-        let secret = secret.map(Arc::new);
+        let registry_secret = credentials.registry.map(Arc::new);
+        let ssh_secret = credentials.ssh.map(Arc::new);
 
         tokio::time::timeout(CONNECTION_TIMEOUT, async {
             match profile.adapter {
-                AdapterId::Etcd => Self::connect_etcd(profile, secret.as_deref()).await,
-                AdapterId::Zookeeper => Self::connect_zookeeper(profile, secret.as_deref()).await,
-                AdapterId::Nacos => Self::connect_nacos(profile, secret).await,
+                AdapterId::Etcd => {
+                    Self::connect_etcd(profile, registry_secret.as_deref(), ssh_secret).await
+                }
+                AdapterId::Zookeeper => {
+                    Self::connect_zookeeper(profile, registry_secret.as_deref()).await
+                }
+                AdapterId::Nacos => Self::connect_nacos(profile, registry_secret).await,
             }
         })
         .await
@@ -120,9 +137,7 @@ impl RegistrySession {
     ) -> Result<ResourcePage, RegistryError> {
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => {
-                    list_etcd(client.as_ref().clone(), parent, cursor, limit).await
-                }
+                Self::Etcd(session) => list_etcd(session.client(), parent, cursor, limit).await,
                 Self::Zookeeper(client) => list_zookeeper(client, parent, cursor, limit).await,
                 Self::Nacos(session) => list_nacos(session, parent, cursor, limit).await,
             }
@@ -137,7 +152,7 @@ impl RegistrySession {
     ) -> Result<ResourceDocument, RegistryError> {
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => read_etcd(client.as_ref().clone(), address).await,
+                Self::Etcd(session) => read_etcd(session.client(), address).await,
                 Self::Zookeeper(client) => read_zookeeper(client, address).await,
                 Self::Nacos(session) => read_nacos(session, address).await,
             }
@@ -153,7 +168,7 @@ impl RegistrySession {
     ) -> Result<ResourceSearchPage, RegistryError> {
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => search_etcd(client.as_ref().clone(), request, limit).await,
+                Self::Etcd(session) => search_etcd(session.client(), request, limit).await,
                 Self::Zookeeper(client) => search_zookeeper(client, request, limit).await,
                 Self::Nacos(session) => search_nacos(session, request, limit).await,
             }
@@ -202,7 +217,7 @@ impl RegistrySession {
     ) -> Result<NativeResourceInfo, RegistryError> {
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => inspect_etcd_lease(client.as_ref().clone(), address).await,
+                Self::Etcd(session) => inspect_etcd_lease(session.client(), address).await,
                 Self::Zookeeper(client) => inspect_zookeeper_acl(client, address).await,
                 Self::Nacos(_) => Err(RegistryError::unsupported(
                     "Nacos native history is exposed through the history commands",
@@ -221,7 +236,7 @@ impl RegistrySession {
         let timeout_phase = phase.clone();
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => mutate_etcd(client.as_ref().clone(), mutation, &phase).await,
+                Self::Etcd(session) => mutate_etcd(session.client(), mutation, &phase).await,
                 Self::Zookeeper(client) => mutate_zookeeper(client, mutation, &phase).await,
                 Self::Nacos(session) => mutate_nacos(session, mutation, &phase).await,
             }
@@ -238,8 +253,8 @@ impl RegistrySession {
         let timeout_phase = phase.clone();
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => {
-                    execute_etcd_transaction(client.as_ref().clone(), transaction, &phase).await
+                Self::Etcd(session) => {
+                    execute_etcd_transaction(session.client(), transaction, &phase).await
                 }
                 _ => Err(RegistryError::unsupported(
                     "etcd transactions require an etcd connection",
@@ -258,8 +273,8 @@ impl RegistrySession {
         let timeout_phase = phase.clone();
         tokio::time::timeout(OPERATION_TIMEOUT, async {
             match self {
-                Self::Etcd(client) => {
-                    execute_etcd_lease_action(client.as_ref().clone(), action, &phase).await
+                Self::Etcd(session) => {
+                    execute_etcd_lease_action(session.client(), action, &phase).await
                 }
                 _ => Err(RegistryError::unsupported(
                     "etcd lease actions require an etcd connection",
@@ -382,14 +397,29 @@ impl RegistrySession {
     async fn connect_etcd(
         profile: &ConnectionProfile,
         secret: Option<&ConnectionSecret>,
+        ssh_secret: Option<Arc<ConnectionSecret>>,
     ) -> Result<Self, RegistryError> {
-        let endpoints = profile
-            .endpoint
-            .split(',')
-            .map(str::trim)
-            .filter(|endpoint| !endpoint.is_empty())
-            .map(|endpoint| etcd_endpoint(endpoint, profile.tls.enabled))
-            .collect::<Vec<_>>();
+        let (endpoints, tunnel, tunnel_tls_name) = if profile.ssh_tunnel.enabled {
+            let tunnel = ManagedSshTunnel::open(profile, ssh_secret).await?;
+            let tls_name = tunnel.remote_host().to_owned();
+            (
+                vec![tunnel.local_etcd_endpoint(profile.tls.enabled)],
+                Some(tunnel),
+                Some(tls_name),
+            )
+        } else {
+            (
+                profile
+                    .endpoint
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|endpoint| !endpoint.is_empty())
+                    .map(|endpoint| etcd_endpoint(endpoint, profile.tls.enabled))
+                    .collect::<Vec<_>>(),
+                None,
+                None,
+            )
+        };
         let mut options = ConnectOptions::default()
             .with_connect_timeout(OPERATION_TIMEOUT)
             .with_timeout(OPERATION_TIMEOUT);
@@ -400,7 +430,8 @@ impl RegistrySession {
             );
         }
         if profile.tls.enabled {
-            options = options.with_tls(etcd_tls_options(profile).await?);
+            options =
+                options.with_tls(etcd_tls_options(profile, tunnel_tls_name.as_deref()).await?);
         }
         let mut client = etcd_client::Client::connect(endpoints, Some(options))
             .await
@@ -408,7 +439,10 @@ impl RegistrySession {
         client.status().await.map_err(|error| {
             RegistryError::network(format!("etcd status request failed: {error}"))
         })?;
-        Ok(Self::Etcd(Box::new(client)))
+        Ok(Self::Etcd(EtcdSession {
+            client: Box::new(client),
+            _tunnel: tunnel,
+        }))
     }
 
     async fn connect_zookeeper(
@@ -519,7 +553,10 @@ fn etcd_endpoint(endpoint: &str, tls: bool) -> String {
     }
 }
 
-async fn etcd_tls_options(profile: &ConnectionProfile) -> Result<EtcdTlsOptions, RegistryError> {
+async fn etcd_tls_options(
+    profile: &ConnectionProfile,
+    tunnel_server_name: Option<&str>,
+) -> Result<EtcdTlsOptions, RegistryError> {
     let mut options = EtcdTlsOptions::new().with_enabled_roots();
     if !profile.tls.ca_certificate_path.is_empty() {
         let ca = read_tls_file(&profile.tls.ca_certificate_path, "CA certificate").await?;
@@ -535,6 +572,8 @@ async fn etcd_tls_options(profile: &ConnectionProfile) -> Result<EtcdTlsOptions,
     }
     if !profile.tls.server_name.is_empty() {
         options = options.domain_name(profile.tls.server_name.clone());
+    } else if let Some(server_name) = tunnel_server_name {
+        options = options.domain_name(server_name.to_owned());
     }
     Ok(options)
 }

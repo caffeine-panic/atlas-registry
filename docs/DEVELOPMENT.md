@@ -88,6 +88,25 @@ cargo test --manifest-path src-tauri/Cargo.toml --test live_registry \
 
 AccessKey Secret 只作为 `ConnectionSecret` 进入测试进程，不写入连接配置或测试输出。
 
+etcd SSH 隧道的 ignored 契约使用一台允许 TCP forwarding、且能够访问目标 etcd endpoint 的跳板机：
+
+```bash
+ATLAS_TEST_ETCD_ENDPOINT=etcd.internal:2379 \
+ATLAS_TEST_ETCD_SSH_HOST=bastion.example.com \
+ATLAS_TEST_ETCD_SSH_PORT=22 \
+ATLAS_TEST_ETCD_SSH_USERNAME=operator \
+ATLAS_TEST_ETCD_SSH_AUTH=privateKey \
+ATLAS_TEST_ETCD_SSH_PRIVATE_KEY=/path/to/id_ed25519 \
+ATLAS_TEST_ETCD_SSH_PASSPHRASE=optional-passphrase \
+ATLAS_TEST_ETCD_SSH_HOST_KEY=SHA256:base64-fingerprint \
+cargo test --manifest-path src-tauri/Cargo.toml --test live_registry \
+  etcd_ssh_tunnel_live_session_can_browse_root -- --ignored --exact
+```
+
+`ATLAS_TEST_ETCD_SSH_AUTH=password` 时改为提供 `ATLAS_TEST_ETCD_SSH_PASSWORD`。测试进程不会输出这些变量；应用中的 SSH 凭据与注册中心凭据也使用独立的系统凭据库条目。
+
+默认 Rust 测试会启动 loopback SSH fixture，验证真实握手、转发、认证拒绝、指纹拒绝、超时与取消后的 socket 清理（因此需要本机监听权限）。`scripts/compatibility-test.sh etcd <version>` 还会通过这个跳板连接隔离的真实 etcd，覆盖浏览、关闭与重连，不依赖外部 SSH 账号。
+
 若要同时验证读取与元数据，提供已有的只读 fixture：
 
 ```bash

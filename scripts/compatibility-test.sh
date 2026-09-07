@@ -95,6 +95,11 @@ run_etcd() {
     ATLAS_TEST_ETCD_KEY=/atlas/fixture \
     ATLAS_TEST_ETCD_MUTATION_PREFIX=/atlas-registry-tests \
     ATLAS_TEST_ENABLE_MUTATIONS=1
+
+  ATLAS_TEST_ETCD_ENDPOINT=127.0.0.1:2379 cargo test \
+    --manifest-path "$repository_root/src-tauri/Cargo.toml" --lib \
+    registry::ssh_tunnel::tests::managed_bastion_can_probe_browse_reconnect_and_close_real_etcd \
+    -- --ignored --exact
 }
 
 run_zookeeper() {

@@ -31,6 +31,8 @@ keyring = "4.1"
 nacos-sdk = { version = "0.8", default-features = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 ring = "0.17"
+# 纯 Rust/Tokio SSH 客户端；关闭默认 aws-lc-rs，复用现有 ring 后端并保留常见 RSA 私钥支持。
+russh = { version = "0.63.1", default-features = false, features = ["ring", "rsa"] }
 # Unify the updater's reqwest 0.13 build with native macOS/Windows proxy discovery.
 updater-reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["system-proxy"] }
 serde = { version = "1", features = ["derive"] }
@@ -39,7 +41,7 @@ sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2.10.1"
-tokio = { version = "1", features = ["fs", "io-util", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "rt", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tonic = "0.14"
 zookeeper-client = { version = "0.11.1", features = ["tokio", "tls"] }

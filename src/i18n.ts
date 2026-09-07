@@ -77,6 +77,20 @@ export const messages = {
     "connection.clientKey": "客户端私钥路径",
     "connection.clientKeyHelp": "可选；私钥内容只由 Rust 读取",
     "connection.serverNameHelp": "证书域名覆盖，可选",
+    "connection.enableSshTunnel": "通过 SSH 隧道连接",
+    "connection.sshHost": "SSH 跳板机",
+    "connection.sshPort": "SSH 端口",
+    "connection.sshUsername": "SSH 用户名",
+    "connection.sshAuthentication": "SSH 认证方式",
+    "connection.sshPassword": "SSH 密码",
+    "connection.sshPrivateKey": "私钥",
+    "connection.sshPrivateKeyPath": "私钥路径",
+    "connection.sshKeyPassphrase": "私钥口令（可选）",
+    "connection.sshKeepSecret": "留空表示保留现有 SSH 凭据",
+    "connection.sshPassphraseOptional": "可选；保存在系统凭据库",
+    "connection.sshHostKeyFingerprint": "主机密钥指纹",
+    "connection.sshTunnelHelp":
+      "仅支持单跳转发。必须固定 SHA256 主机密钥指纹；SSH 密码或私钥口令只存入系统凭据库。",
     "connection.productionWarning":
       "该连接已标记为生产环境。资源写入仍会要求输入连接名并进行版本条件校验。",
     "connection.delete": "删除连接",
@@ -85,6 +99,7 @@ export const messages = {
     "connection.saveAndConnect": "保存并连接",
     "connection.required": "连接名称和 endpoint 不能为空",
     "connection.secretRequired": "新连接启用认证时必须填写密钥",
+    "connection.sshSecretRequired": "SSH 密码认证必须填写密码",
     "connection.connected": "已连接 {endpoint}",
     "connection.testSucceeded": "连接测试成功：{endpoint}",
     "connection.testCancelled": "连接测试已取消",
@@ -290,6 +305,21 @@ export const messages = {
     "connection.clientKeyHelp":
       "Optional; only Rust reads the private-key contents",
     "connection.serverNameHelp": "Optional certificate hostname override",
+    "connection.enableSshTunnel": "Connect through an SSH tunnel",
+    "connection.sshHost": "SSH bastion",
+    "connection.sshPort": "SSH port",
+    "connection.sshUsername": "SSH username",
+    "connection.sshAuthentication": "SSH authentication",
+    "connection.sshPassword": "SSH password",
+    "connection.sshPrivateKey": "Private key",
+    "connection.sshPrivateKeyPath": "Private-key path",
+    "connection.sshKeyPassphrase": "Private-key passphrase (optional)",
+    "connection.sshKeepSecret": "Leave blank to keep the SSH credential",
+    "connection.sshPassphraseOptional":
+      "Optional; stored in the operating system credential vault",
+    "connection.sshHostKeyFingerprint": "Host-key fingerprint",
+    "connection.sshTunnelHelp":
+      "Single-hop forwarding only. A pinned SHA256 host-key fingerprint is required; SSH passwords and key passphrases are stored only in the operating system credential vault.",
     "connection.productionWarning":
       "This connection is marked as production. Resource writes still require the exact connection name and a version condition.",
     "connection.delete": "Delete connection",
@@ -299,6 +329,8 @@ export const messages = {
     "connection.required": "Connection name and endpoint are required",
     "connection.secretRequired":
       "A secret is required when authentication is enabled for a new connection",
+    "connection.sshSecretRequired":
+      "A password is required for SSH password authentication",
     "connection.connected": "Connected to {endpoint}",
     "connection.testSucceeded": "Connection test succeeded: {endpoint}",
     "connection.testCancelled": "Connection test cancelled",

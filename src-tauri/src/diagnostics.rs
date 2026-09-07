@@ -141,6 +141,14 @@ mod tests {
                 client_key_path: sentinel.to_owned(),
                 server_name: sentinel.to_owned(),
             },
+            ssh_tunnel: crate::registry::SshTunnelProfile {
+                enabled: true,
+                host: sentinel.to_owned(),
+                username: sentinel.to_owned(),
+                private_key_path: sentinel.to_owned(),
+                host_key_fingerprint: sentinel.to_owned(),
+                ..Default::default()
+            },
         }];
 
         let bytes = build(&profiles, &RegistryCatalog.descriptors(), 1)

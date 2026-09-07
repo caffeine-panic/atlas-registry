@@ -21,6 +21,7 @@ const registryErrorCodes = new Set<RegistryErrorCode>([
   "credentialMissing",
   "credentialStore",
   "tlsConfiguration",
+  "sshHostKey",
   "storage",
   "cancelled",
   "productionLocked",
@@ -45,6 +46,7 @@ const englishRegistryErrors: Record<RegistryErrorCode, string> = {
   credentialMissing: "The required credential is missing",
   credentialStore: "The operating system credential vault is unavailable",
   tlsConfiguration: "The TLS configuration is invalid",
+  sshHostKey: "The SSH host key does not match the pinned fingerprint",
   storage: "Local application storage is unavailable",
   cancelled: "The operation was cancelled",
   productionLocked:
