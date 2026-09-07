@@ -4,6 +4,14 @@
 
 所有 GitHub Actions 均固定到完整 commit SHA；更新 action 时应先核对官方 tag 指向，再同时更新注释中的版本。`release` environment 建议配置 required reviewers，tag `v*` 建议配置保护规则。
 
+## 本轮公开发布例外（2026-09-04）
+
+项目所有者已确认本轮接受公开发布未平台签名的安装包。该例外只豁免 Apple Developer ID/公证和 Windows Authenticode 这两项平台身份要求，不代表 #17「可信安装包与包管理器分发」已完成，也不允许关闭或更换 Tauri 更新签名。
+
+完成质量门禁、真实服务验证和安装包/更新资产检查后，本轮必须将 Draft 转为正式公开 Release，并验证 `releases/latest` 与 `releases/latest/download/latest.json` 可访问。Release 与中英文下载说明必须明确：macOS 产物仅有 ad-hoc 签名、未公证，Windows 产物没有 Authenticode 签名，系统可能警告或阻止安装；Tauri 更新签名不能替代操作系统发行者认证。不得宣传已通过平台可信签名验收，也不提供关闭系统安全保护的脚本。
+
+下文的平台证书门禁仍是可信发布的目标要求；本轮按上述显式例外公开，后续是否继续采用例外应由发布者重新确认。
+
 ## 应用内更新签名
 
 `0.2.0` 是首个包含应用内更新入口的版本，早于它的安装包仍需手动升级一次。客户端只访问 `https://github.com/caffeine-panic/atlas-registry/releases/latest/download/latest.json`，下载由 Rust updater 完成，WebView 不直接访问 GitHub。
