@@ -10,6 +10,7 @@ pub mod updates;
 use registry::{
     AdapterDescriptor, AdapterId, ConnectionProbe, ConnectionProfile, ConnectionSession,
     EtcdLeaseAction, EtcdLeaseActionResult, EtcdTransaction, EtcdTransactionResult, MutationResult,
+    NacosAiAssetDetail, NacosAiAssetKind, NacosAiAssetPage, NacosAiAssetRef, NacosAiCapability,
     NacosInstance, NacosNamespace, NacosNativeAction, NacosNativeActionResult,
     NacosNativeOperation, NacosService, NacosServicePage, NativeResourceInfo, OperationId,
     ProductionLockStatus, RegistryCatalog, RegistryError, RegistryService, ResourceAddress,
@@ -876,6 +877,67 @@ struct NacosOperationRequest {
 }
 
 #[tauri::command]
+async fn get_nacos_ai_capability(
+    service: State<'_, RegistryService>,
+    request: NacosOperationRequest,
+) -> Result<NacosAiCapability, RegistryError> {
+    service
+        .nacos_ai_capability_cancellable(
+            OperationId::new(request.operation_id)?,
+            request.connection_id,
+        )
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListNacosAiAssetsRequest {
+    connection_id: String,
+    operation_id: String,
+    kind: NacosAiAssetKind,
+    cursor: Option<String>,
+    limit: Option<usize>,
+}
+
+#[tauri::command]
+async fn list_nacos_ai_assets(
+    service: State<'_, RegistryService>,
+    request: ListNacosAiAssetsRequest,
+) -> Result<NacosAiAssetPage, RegistryError> {
+    service
+        .list_nacos_ai_assets_cancellable(
+            OperationId::new(request.operation_id)?,
+            request.connection_id,
+            request.kind,
+            request.cursor,
+            request.limit.unwrap_or(50),
+        )
+        .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadNacosAiAssetRequest {
+    connection_id: String,
+    operation_id: String,
+    asset: NacosAiAssetRef,
+}
+
+#[tauri::command]
+async fn read_nacos_ai_asset(
+    service: State<'_, RegistryService>,
+    request: ReadNacosAiAssetRequest,
+) -> Result<NacosAiAssetDetail, RegistryError> {
+    service
+        .read_nacos_ai_asset_cancellable(
+            OperationId::new(request.operation_id)?,
+            request.connection_id,
+            request.asset,
+        )
+        .await
+}
+
+#[tauri::command]
 async fn list_nacos_namespaces(
     service: State<'_, RegistryService>,
     request: NacosOperationRequest,
@@ -1639,6 +1701,9 @@ fn configured_builder<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::B
             execute_etcd_transaction,
             execute_etcd_lease_action,
             execute_zookeeper_native_action,
+            get_nacos_ai_capability,
+            list_nacos_ai_assets,
+            read_nacos_ai_asset,
             list_nacos_namespaces,
             list_nacos_services,
             read_nacos_service,

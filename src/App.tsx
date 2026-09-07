@@ -61,6 +61,7 @@ import {
 } from "./ConnectionDialog";
 import { HistoryDialog } from "./HistoryDialog";
 import { NacosHistoryDialog } from "./NacosHistoryDialog";
+import { NacosAiDialog } from "./NacosAiDialog";
 import { NacosNativeDialog } from "./NacosNativeDialog";
 import { NativeInfoDialog } from "./NativeInfoDialog";
 import { SafeChangeDialog } from "./SafeChangeDialog";
@@ -490,6 +491,7 @@ export function App() {
     useState<Extract<ZookeeperNativeAction, { action: "create" }>>();
   const [zookeeperConfirmation, setZookeeperConfirmation] = useState("");
   const [nacosNativeOpen, setNacosNativeOpen] = useState(false);
+  const [nacosAiOpen, setNacosAiOpen] = useState(false);
   const [productionLockStatus, setProductionLockStatus] =
     useState<ProductionLockStatus>();
   const [productionLockBusy, setProductionLockBusy] = useState(false);
@@ -698,6 +700,7 @@ export function App() {
     setEtcdTransactionOpen(false);
     setPendingZookeeperAction(undefined);
     setNacosNativeOpen(false);
+    setNacosAiOpen(false);
     setNativeInfoOpen(false);
     setNativeInfo(undefined);
   }, [writeAllowed]);
@@ -947,6 +950,7 @@ export function App() {
     setHistoryOpen(false);
     setServerHistoryOpen(false);
     setNacosNativeOpen(false);
+    setNacosAiOpen(false);
     setNativeInfoOpen(false);
     setNativeInfo(undefined);
     const nextSearch = searchForWorkspaceMode(
@@ -2639,6 +2643,7 @@ export function App() {
     setPendingMutation(undefined);
     setPendingZookeeperAction(undefined);
     setNacosNativeOpen(false);
+    setNacosAiOpen(false);
     setCreateDialogOpen(false);
     setCompareContext(undefined);
     setResourceComparison(undefined);
@@ -3062,6 +3067,21 @@ export function App() {
                   title="etcd 原子批量事务"
                 >
                   T
+                </button>
+              )}
+              {selectedProfile?.adapter === "nacos" && (
+                <button
+                  className="icon-button transaction-resource"
+                  disabled={
+                    demoMode ||
+                    !selectedSession ||
+                    busy ||
+                    selectedProfile.nacosApiVersion !== "v3"
+                  }
+                  onClick={() => setNacosAiOpen(true)}
+                  title="Nacos 3 AI Registry 只读浏览器"
+                >
+                  AI
                 </button>
               )}
               {selectedProfile?.adapter === "nacos" && (
@@ -3792,6 +3812,17 @@ export function App() {
           onClose={() => setServerHistoryOpen(false)}
         />
       )}
+
+      {!demoMode &&
+        nacosAiOpen &&
+        selectedProfile?.adapter === "nacos" &&
+        selectedSession && (
+          <NacosAiDialog
+            connectionId={selectedSession.id}
+            namespaceId={selectedProfile.namespace}
+            onClose={() => setNacosAiOpen(false)}
+          />
+        )}
 
       {!demoMode &&
         nacosNativeOpen &&

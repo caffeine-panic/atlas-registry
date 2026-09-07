@@ -1,5 +1,6 @@
 mod adapters;
 mod mutations;
+mod nacos_ai;
 mod nacos_native;
 mod ssh_tunnel;
 mod watch;
@@ -105,6 +106,70 @@ pub struct NacosService {
 pub struct NacosServicePage {
     pub items: Vec<NacosService>,
     pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "lowercase")]
+pub enum NacosAiAssetKind {
+    Mcp,
+    Prompt,
+    Skill,
+    A2a,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NacosAiCapability {
+    pub available: bool,
+    pub read_only: bool,
+    pub families: Vec<NacosAiAssetKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NacosAiAssetSummary {
+    pub kind: NacosAiAssetKind,
+    pub identifier: String,
+    pub name: String,
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NacosAiAssetPage {
+    pub items: Vec<NacosAiAssetSummary>,
+    pub next_cursor: Option<String>,
+    pub total_count: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NacosAiAssetRef {
+    pub kind: NacosAiAssetKind,
+    pub identifier: String,
+    pub name: String,
+    pub version: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct NacosAiAssetDetail {
+    pub asset: NacosAiAssetSummary,
+    pub read_only: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -2467,6 +2532,64 @@ impl RegistryService {
             .await?
             .list_nacos_namespaces()
             .await
+    }
+
+    pub async fn nacos_ai_capability(
+        &self,
+        connection_id: &str,
+    ) -> Result<NacosAiCapability, RegistryError> {
+        self.session(connection_id)
+            .await?
+            .nacos_ai_capability()
+            .await
+    }
+
+    pub async fn nacos_ai_capability_cancellable(
+        &self,
+        operation_id: OperationId,
+        connection_id: String,
+    ) -> Result<NacosAiCapability, RegistryError> {
+        let service = self.clone();
+        self.run_operation(operation_id, async move {
+            service.nacos_ai_capability(&connection_id).await
+        })
+        .await
+    }
+
+    pub async fn list_nacos_ai_assets_cancellable(
+        &self,
+        operation_id: OperationId,
+        connection_id: String,
+        kind: NacosAiAssetKind,
+        cursor: Option<String>,
+        limit: usize,
+    ) -> Result<NacosAiAssetPage, RegistryError> {
+        let service = self.clone();
+        self.run_operation(operation_id, async move {
+            service
+                .session(&connection_id)
+                .await?
+                .list_nacos_ai_assets(kind, cursor, limit.clamp(1, 100))
+                .await
+        })
+        .await
+    }
+
+    pub async fn read_nacos_ai_asset_cancellable(
+        &self,
+        operation_id: OperationId,
+        connection_id: String,
+        asset_ref: NacosAiAssetRef,
+    ) -> Result<NacosAiAssetDetail, RegistryError> {
+        let service = self.clone();
+        self.run_operation(operation_id, async move {
+            service
+                .session(&connection_id)
+                .await?
+                .read_nacos_ai_asset(asset_ref)
+                .await
+        })
+        .await
     }
 
     pub async fn list_nacos_namespaces_cancellable(

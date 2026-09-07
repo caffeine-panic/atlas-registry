@@ -87,6 +87,7 @@ flowchart LR
 | `registry/adapters/zookeeper_error.rs` | ZooKeeper 认证拒绝、会话过期、超时与传输错误的脱敏结构化映射                              |
 | `registry/mutations.rs`                | 条件变更执行与前后快照                                                                    |
 | `registry/watch.rs`                    | 监听生命周期、断线恢复、Nacos 5 秒 MD5 对账                                               |
+| `registry/nacos_ai.rs`                 | Nacos 3 AI Registry 分族能力探测、只读分页和限长元数据归一化                              |
 | `registry/nacos_native.rs`             | namespace / service / instance 管理与有界回读确认                                         |
 
 `audited_mutation.rs` 把「写前审计 → 远端变更 → 写后审计」编排成一个不可跳过的流程；所有 mutation 命令都经过它。
@@ -115,9 +116,10 @@ flowchart LR
 3. **结果不确定性诚实上报**：取消 / 超时 / 提交后传输错误 → `mutationOutcomeUnknown`，不自动重试；远端成功但审计落盘失败 → `auditIncomplete`，两者不得混淆。
 4. **生产默认只读**：production 会话的写窗口仅存在内存且有界；所有 mutation 在 dispatch 前检查同一单调时钟状态，到期竞争必须返回 `productionLocked`。
 5. **Nacos SDK cache 不可信**：配置正文读取、写前检查、写后确认、周期对账一律走版本对应的权威 HTTP API；SDK 只承担 gRPC mutation、listener 与临时实例 session（原因见 ADR-0001 上游约束）。
-6. **MSE 签名路径一致**：SDK Config/Naming 身份上下文与权威 HTTP API 共享 AccessKey 生命周期和 HMAC-SHA1 规则，但分别遵循 SDK `RequestResource` 与 HTTP 参数的资源规范化语义；HTTP Config 在 namespace 非空时保留空 group 分隔符。AK Secret 不进入 URL、连接配置或日志。
-7. **取消安全**：长操作挂在 `CancellationToken` 上；审计追加在独立任务中 `write_all + sync_data`，不被取消切断。
-8. **SSH 身份固定**：SSH 隧道只接受 profile 中显式固定的 SHA-256 主机密钥指纹；身份变化返回独立的 `sshHostKey` 错误。每个隧道最多同时转发 32 个连接，关闭、连接取消或超时会终止监听与全部转发任务。
+6. **AI Registry 只读且按能力出现**：仅 Nacos v3 profile 可以探测 MCP、Prompt、Skill、A2A Admin API；每类独立执行一个 1 条记录的有界探测，404/405/501 表示缺失，401/403 保留为权限错误。列表每页 ≤ 100，HTTP body ≤ 512 KiB，跨 IPC 仅传稳定身份、描述和白名单标量元数据（≤ 32 项、16 KiB），不传模板、工具定义、Skill 包或任意嵌套 payload。命令面只有 capability/list/read，不存在 AI mutation command。
+7. **MSE 签名路径一致**：SDK Config/Naming 身份上下文与权威 HTTP API 共享 AccessKey 生命周期和 HMAC-SHA1 规则，但分别遵循 SDK `RequestResource` 与 HTTP 参数的资源规范化语义；HTTP Config 在 namespace 非空时保留空 group 分隔符。AK Secret 不进入 URL、连接配置或日志。
+8. **取消安全**：长操作挂在 `CancellationToken` 上；审计追加在独立任务中 `write_all + sync_data`，不被取消切断。
+9. **SSH 身份固定**：SSH 隧道只接受 profile 中显式固定的 SHA-256 主机密钥指纹；身份变化返回独立的 `sshHostKey` 错误。每个隧道最多同时转发 32 个连接，关闭、连接取消或超时会终止监听与全部转发任务。
 
 ## 测试体系
 

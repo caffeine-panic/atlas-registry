@@ -2,12 +2,12 @@ use atlas_registry_lib::{
     credentials::{ConnectionCredentials, ConnectionSecret},
     registry::{
         AdapterId, AuthenticationMode, ConnectionAuth, ConnectionProfile, EtcdLeaseAction,
-        EtcdLeaseActionResult, EtcdTransaction, MutationValue, NacosApiVersion, NacosNativeAction,
-        NacosNativeOperation, NativeResourceInfo, OperationId, RegistryErrorCode, RegistryService,
-        ResourceAddress, ResourceHistoryRequest, ResourceMutation, ResourceSearchRequest,
-        SshAuthenticationMode, SshTunnelProfile, SubscriptionId, TlsProfile, ValueEncoding,
-        WatchEvent, WatchRequest, WatchStatusState, ZookeeperCreateMode, ZookeeperNativeAction,
-        ZookeeperNativeActionResult,
+        EtcdLeaseActionResult, EtcdTransaction, MutationValue, NacosAiAssetKind, NacosApiVersion,
+        NacosNativeAction, NacosNativeOperation, NativeResourceInfo, OperationId,
+        RegistryErrorCode, RegistryService, ResourceAddress, ResourceHistoryRequest,
+        ResourceMutation, ResourceSearchRequest, SshAuthenticationMode, SshTunnelProfile,
+        SubscriptionId, TlsProfile, ValueEncoding, WatchEvent, WatchRequest, WatchStatusState,
+        ZookeeperCreateMode, ZookeeperNativeAction, ZookeeperNativeActionResult,
     },
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -574,6 +574,37 @@ fn nacos_live_session_can_browse_the_config_list() {
             )
             .await
             .expect("Nacos dataIds should be searchable without reading config content");
+        if version == NacosApiVersion::V3 {
+            let capability = service
+                .nacos_ai_capability(&session.id)
+                .await
+                .expect("Nacos 3 AI Registry capability should be detectable");
+            assert!(capability.read_only);
+            for family in [
+                NacosAiAssetKind::Mcp,
+                NacosAiAssetKind::Prompt,
+                NacosAiAssetKind::Skill,
+                NacosAiAssetKind::A2a,
+            ] {
+                assert!(
+                    capability.families.contains(&family),
+                    "Nacos 3.2.3 should expose the {family:?} read API"
+                );
+                service
+                    .list_nacos_ai_assets_cancellable(
+                        OperationId::new(format!("live-nacos-ai-{family:?}-{}", unique_suffix()))
+                            .unwrap(),
+                        session.id.clone(),
+                        family,
+                        None,
+                        1,
+                    )
+                    .await
+                    .unwrap_or_else(|error| {
+                        panic!("Nacos 3.2.3 {family:?} list should be readable: {error:?}")
+                    });
+            }
+        }
         if let (Ok(group), Ok(data_id)) = (
             std::env::var("ATLAS_TEST_NACOS_GROUP"),
             std::env::var("ATLAS_TEST_NACOS_DATA_ID"),

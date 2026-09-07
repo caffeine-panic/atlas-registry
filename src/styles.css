@@ -2056,6 +2056,32 @@ html[data-platform="macos"] .topbar {
   margin: 0 0 16px;
   color: #d7e2ee;
 }
+.nacos-ai-dialog .native-management-grid {
+  min-height: 360px;
+}
+.ai-metadata-view dl {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
+  gap: 8px 14px;
+  margin: 16px 0;
+}
+.ai-metadata-view dt {
+  color: #8394a9;
+  font-size: 11px;
+}
+.ai-metadata-view dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ai-metadata-row {
+  display: contents;
+}
+.empty-state {
+  padding: 24px 12px;
+  color: #8394a9;
+  text-align: center;
+}
 .native-object-editor textarea {
   min-height: 105px;
   resize: vertical;
