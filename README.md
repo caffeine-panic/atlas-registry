@@ -45,11 +45,11 @@ For an SSH-only etcd endpoint, enable **Connect through an SSH tunnel** in the c
 
 ## Protocol-native operations
 
-| Protocol  | Resource workspace                                               | Native operations                                                                                            |
-| --------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| etcd      | Prefix/key browsing, binary-safe values, search, watch           | Lease lifecycle and 2–32 operation atomic transactions                                                       |
-| ZooKeeper | Lazy znode tree, data and Stat metadata, renewed one-shot watch  | Conditional ACL editing and persistent, sequential, ephemeral, and ephemeral-sequential nodes                |
-| Nacos     | Paginated config browsing, cross-page identifier search, history | Namespace, service, persistent instance, and SDK-managed ephemeral instance operations for Nacos 2.x and 3.x |
+| Protocol  | Resource workspace                                                                                                                                         | Native operations                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| etcd      | Prefix/key browsing, binary-safe values, search, watch                                                                                                     | Lease lifecycle and 2–32 operation atomic transactions                                                       |
+| ZooKeeper | Lazy znode tree, data and Stat metadata, renewed one-shot watch                                                                                            | Conditional ACL editing and persistent, sequential, ephemeral, and ephemeral-sequential nodes                |
+| Nacos     | Paginated config browsing, cross-page identifier search, history; read-only Nacos 3 AI Registry explorer for detected MCP, Prompt, Skill, and A2A families | Namespace, service, persistent instance, and SDK-managed ephemeral instance operations for Nacos 2.x and 3.x |
 
 ## Safety model
 
@@ -71,6 +71,8 @@ The real-service contract suite covers:
 - etcd 3.6.11 and 3.7.0;
 - ZooKeeper 3.8.6 and 3.9.5;
 - Nacos 2.5.2 and 3.2.3.
+
+The AI Registry explorer is verified against the Nacos 3.2.3 Admin API contract and probes each family independently, so older 3.x servers only show endpoints they actually expose. It is intentionally metadata-only and read-only: prompt templates, MCP tool definitions, Skill packages, and all create/update/publish/delete operations remain unavailable.
 
 The suite exercises browsing, guarded mutations, watches, conflicts, and protocol-native operations against isolated services. See the [verification record](docs/VERIFICATION.md) and [development guide](docs/DEVELOPMENT.md).
 

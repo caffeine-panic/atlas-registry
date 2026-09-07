@@ -22,6 +22,7 @@ use crate::credentials::{ConnectionCredentials, ConnectionSecret};
 use super::{
     AdapterId, AuthenticationMode, ConnectionProfile, EncodedValue, EtcdLeaseAction,
     EtcdLeaseActionResult, EtcdTransaction, EtcdTransactionResult, MutationPhase, MutationResult,
+    NacosAiAssetDetail, NacosAiAssetKind, NacosAiAssetPage, NacosAiAssetRef, NacosAiCapability,
     NacosApiVersion, NacosInstance, NacosNamespace, NacosNativeAction, NacosNativeActionResult,
     NacosService, NacosServicePage, NativeResourceInfo, NumberedPage, RegistryError,
     RegistryErrorCode, ResourceAddress, ResourceDocument, ResourceHistoryDocument,
@@ -33,7 +34,7 @@ use super::{
         mutate_etcd, mutate_nacos, mutate_zookeeper,
     },
 };
-use super::{nacos_native, ssh_tunnel::ManagedSshTunnel};
+use super::{nacos_ai, nacos_native, ssh_tunnel::ManagedSshTunnel};
 use nacos_auth::NacosRequestAuth;
 
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(8);
@@ -317,6 +318,53 @@ impl RegistrySession {
         })
         .await
         .map_err(|_| RegistryError::timeout("Nacos namespace list"))?
+    }
+
+    pub(super) async fn nacos_ai_capability(&self) -> Result<NacosAiCapability, RegistryError> {
+        tokio::time::timeout(OPERATION_TIMEOUT, async {
+            match self {
+                Self::Nacos(session) => nacos_ai::capability(session).await,
+                _ => Err(RegistryError::unsupported(
+                    "Nacos AI Registry requires a Nacos connection",
+                )),
+            }
+        })
+        .await
+        .map_err(|_| RegistryError::timeout("Nacos AI Registry capability probe"))?
+    }
+
+    pub(super) async fn list_nacos_ai_assets(
+        &self,
+        kind: NacosAiAssetKind,
+        cursor: Option<String>,
+        limit: usize,
+    ) -> Result<NacosAiAssetPage, RegistryError> {
+        tokio::time::timeout(OPERATION_TIMEOUT, async {
+            match self {
+                Self::Nacos(session) => nacos_ai::list_assets(session, kind, cursor, limit).await,
+                _ => Err(RegistryError::unsupported(
+                    "Nacos AI Registry requires a Nacos connection",
+                )),
+            }
+        })
+        .await
+        .map_err(|_| RegistryError::timeout("Nacos AI Registry asset list"))?
+    }
+
+    pub(super) async fn read_nacos_ai_asset(
+        &self,
+        asset_ref: NacosAiAssetRef,
+    ) -> Result<NacosAiAssetDetail, RegistryError> {
+        tokio::time::timeout(OPERATION_TIMEOUT, async {
+            match self {
+                Self::Nacos(session) => nacos_ai::read_asset(session, asset_ref).await,
+                _ => Err(RegistryError::unsupported(
+                    "Nacos AI Registry requires a Nacos connection",
+                )),
+            }
+        })
+        .await
+        .map_err(|_| RegistryError::timeout("Nacos AI Registry asset detail"))?
     }
 
     pub(super) async fn list_nacos_services(

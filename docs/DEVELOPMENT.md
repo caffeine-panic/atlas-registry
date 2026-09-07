@@ -40,6 +40,8 @@ ATLAS_TEST_NACOS_VERSION=v3
 ATLAS_TEST_NACOS_NAMESPACE=public
 ```
 
+AI Registry 只读浏览器复用同一 Nacos HTTP client、TLS、namespace、用户名密码、自定义认证或 MSE AccessKey。当前契约范围是 Nacos 3.2.3：MCP 资源族来自 3.0.1 Admin API，A2A 来自 3.1.0，Prompt 来自 3.2.0，Skill 分页列表来自 3.2.1；运行时仍逐族探测，不以 profile 版本号假定服务端支持。单元 fixture 覆盖成功响应、能力缺失、权限失败、分页、超限数据与新增未知字段。
+
 默认情况下这些测试只执行连接、读取、列表与 value-free 标识搜索；配置了 fixture 时还会检查 etcd key 关联 Lease、ZooKeeper znode ACL，以及 Nacos 服务端历史列表和显式历史详情读取，不会写入测试集群。ZooKeeper fixture 凭据需要拥有读取该节点 ACL 的权限。
 
 ### 容器化兼容矩阵

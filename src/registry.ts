@@ -12,6 +12,12 @@ export type { AuthenticationMode } from "./generated/AuthenticationMode";
 export type { ConnectionEnvironment } from "./generated/ConnectionEnvironment";
 export type { ConnectionProfile } from "./generated/ConnectionProfile";
 export type { NacosApiVersion } from "./generated/NacosApiVersion";
+export type { NacosAiAssetDetail } from "./generated/NacosAiAssetDetail";
+export type { NacosAiAssetKind } from "./generated/NacosAiAssetKind";
+export type { NacosAiAssetPage } from "./generated/NacosAiAssetPage";
+export type { NacosAiAssetRef } from "./generated/NacosAiAssetRef";
+export type { NacosAiAssetSummary } from "./generated/NacosAiAssetSummary";
+export type { NacosAiCapability } from "./generated/NacosAiCapability";
 export type { NacosNativeAction } from "./generated/NacosNativeAction";
 export type { ProductionLockStatus } from "./generated/ProductionLockStatus";
 export type { ResourceAddress } from "./generated/ResourceAddress";
@@ -29,6 +35,11 @@ import type { AdapterId } from "./generated/AdapterId";
 import type { ConnectionEnvironment } from "./generated/ConnectionEnvironment";
 import type { ConnectionProfile } from "./generated/ConnectionProfile";
 import type { NacosNativeAction } from "./generated/NacosNativeAction";
+import type { NacosAiAssetDetail } from "./generated/NacosAiAssetDetail";
+import type { NacosAiAssetKind } from "./generated/NacosAiAssetKind";
+import type { NacosAiAssetPage } from "./generated/NacosAiAssetPage";
+import type { NacosAiAssetRef } from "./generated/NacosAiAssetRef";
+import type { NacosAiCapability } from "./generated/NacosAiCapability";
 import type { ProductionLockStatus } from "./generated/ProductionLockStatus";
 import type { ResourceAddress } from "./generated/ResourceAddress";
 import type { ResourcePage } from "./generated/ResourcePage";
@@ -697,6 +708,36 @@ export function executeZookeeperNativeAction(
 export function listNacosNamespaces(connectionId: string, operationId: string) {
   return invoke<NacosNamespace[]>("list_nacos_namespaces", {
     request: { connectionId, operationId },
+  });
+}
+
+export function getNacosAiCapability(
+  connectionId: string,
+  operationId: string,
+) {
+  return invoke<NacosAiCapability>("get_nacos_ai_capability", {
+    request: { connectionId, operationId },
+  });
+}
+
+export function listNacosAiAssets(
+  connectionId: string,
+  kind: NacosAiAssetKind,
+  operationId: string,
+  cursor?: string,
+) {
+  return invoke<NacosAiAssetPage>("list_nacos_ai_assets", {
+    request: { connectionId, operationId, kind, cursor, limit: 50 },
+  });
+}
+
+export function readNacosAiAsset(
+  connectionId: string,
+  asset: NacosAiAssetRef,
+  operationId: string,
+) {
+  return invoke<NacosAiAssetDetail>("read_nacos_ai_asset", {
+    request: { connectionId, operationId, asset },
   });
 }
 
