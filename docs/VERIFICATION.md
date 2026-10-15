@@ -1,6 +1,14 @@
 # 实现与发布验证记录
 
-本文件是 Atlas Registry `0.2.0` 的历史验证记录，验证日期为 2026-07-15 至 2026-07-17，不代表后续版本的当前发布状态。它区分当时已经在本机取得的证据与必须由 GitHub Actions/组织发布环境完成的证据，避免把“配置了门禁”写成“所有平台已经通过”。
+本文件按版本与日期记录 Atlas Registry 的验证证据，区分本机检查、真实服务契约与 GitHub Actions 平台验证。历史记录不代表后续版本的当前发布状态；下文未注明增量版本的内容保留 `0.2.0` 在 2026-07-15 至 2026-07-17 的验证范围。
+
+## 2026-10-15：0.6.1 三栏布局修复验证
+
+- 发布源码为 `af0e3b7f04f754860d2d74fa988c614176470eae`。连接栏与资源栏收起时缩至 42px，详情区获得释放的空间；展开后恢复拖拽宽度。
+- 本机更新至 Rust 1.99.0，Rust 格式、严格 Clippy、默认测试与生成 IPC 契约检查通过。默认测试为 126 项通过、9 项按配置忽略；前端 88 项测试、Prettier、ESLint 与生产构建通过。
+- 浏览器在 1512px 和 1000px 窗口中验证四种展开组合、真实分隔条拖拽、详情区宽度、无障碍状态，以及重载后的收起状态与宽度恢复。
+- [三平台质量流水线](https://github.com/caffeine-panic/atlas-registry/actions/runs/38674532109)通过：Ubuntu 22.04 验证 DEB 安装与 AppImage 解包；Windows 2025 验证 MSI administrative install 与 NSIS silent install；macOS 15 验证 app/DMG、签名结构与复制安装。
+- [六组隔离真实服务契约](https://github.com/caffeine-panic/atlas-registry/actions/runs/38674532100)全部通过：etcd 3.6.11 / 3.7.0、ZooKeeper 3.8.6 / 3.9.5、Nacos 2.5.2 / 3.2.3。
 
 ## 2026-09-04：受管 SSH 隧道增量验证（#14）
 
