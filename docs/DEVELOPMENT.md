@@ -2,6 +2,18 @@
 
 ## 快速检查
 
+项目使用 Rust 2024 edition，需要保持 stable 工具链为当前版本。旧版 Cargo
+出现 `only supports 2015, 2018, and 2021 editions` 时，先更新工具链：
+
+```bash
+rustup self update
+rustup update stable
+```
+
+如果升级被已退役的 `rls` / `rust-analysis` 组件阻止，先执行
+`rustup component remove rls rust-analysis`，再重试升级。检查需要 `rustfmt` 和
+`clippy`；缺失时执行 `rustup component add rustfmt clippy`。
+
 ```bash
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml

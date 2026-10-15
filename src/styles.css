@@ -177,14 +177,14 @@ html[data-platform="macos"] .topbar {
 }
 
 .shell {
-  --connections-width: 250px;
-  --resources-width: 330px;
+  /* 拖拽宽度由内联样式保存；实际列宽独立计算，避免覆盖收起规则。 */
+  --connections-track-width: var(--connections-width, 250px);
+  --resources-track-width: var(--resources-width, 330px);
 
   display: grid;
-  grid-template-columns: var(--connections-width) var(--resources-width) minmax(
-      0,
-      1fr
-    );
+  grid-template-columns:
+    var(--connections-track-width) var(--resources-track-width)
+    minmax(0, 1fr);
   height: calc(100vh - 58px);
   transition: grid-template-columns 150ms ease;
 }
@@ -239,10 +239,10 @@ html[data-platform="macos"] .topbar {
   font-size: 13px;
 }
 .shell[data-connections="collapsed"] {
-  --connections-width: 42px;
+  --connections-track-width: 42px;
 }
 .shell[data-resources="collapsed"] {
-  --resources-width: 42px;
+  --resources-track-width: 42px;
 }
 .shell[data-resizing="true"] {
   transition: none;
@@ -2126,8 +2126,8 @@ html[data-platform="macos"] .topbar {
 
 @media (max-width: 1100px) {
   .shell {
-    --connections-width: 220px;
-    --resources-width: 290px;
+    --connections-track-width: var(--connections-width, 220px);
+    --resources-track-width: var(--resources-width, 290px);
   }
   .metadata {
     grid-template-columns: 1fr;

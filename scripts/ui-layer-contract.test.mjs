@@ -199,11 +199,11 @@ test("both navigation panels can be collapsed and restored accessibly", () => {
   );
   assert.match(
     css,
-    /\.shell\[data-connections="collapsed"\]\s*\{[^}]*--connections-width:\s*42px/s,
+    /\.shell\[data-connections="collapsed"\]\s*\{[^}]*--connections-track-width:\s*42px/s,
   );
   assert.match(
     css,
-    /\.shell\[data-resources="collapsed"\]\s*\{[^}]*--resources-width:\s*42px/s,
+    /\.shell\[data-resources="collapsed"\]\s*\{[^}]*--resources-track-width:\s*42px/s,
   );
 });
 
@@ -214,6 +214,24 @@ test("navigation panel dividers expose pointer resizing and persisted widths", (
   assert.match(appSource, /onPointerMove=/);
   assert.match(appSource, /--resources-width/);
   assert.match(css, /\.panel-resizer\s*\{[^}]*cursor:\s*col-resize/s);
+});
+
+test("persisted inline widths cannot override collapsed panel tracks", () => {
+  const inlineWidths = [
+    ...appSource.matchAll(
+      /"(--[\w-]+)"\s*:\s*`\$\{\s*panelLayout\.widths\.(connections|resources)\s*\}px`/g,
+    ),
+  ];
+  assert.equal(inlineWidths.length, 2);
+
+  for (const [, property, panel] of inlineWidths) {
+    const collapsed = declarationBlock(`.shell[data-${panel}="collapsed"]`);
+    assert.doesNotMatch(
+      collapsed,
+      new RegExp(`${property}\\s*:`),
+      `${panel}: inline expanded widths take precedence over collapsed CSS declarations`,
+    );
+  }
 });
 
 test("truncated resource names reveal their complete identifier on hover", () => {

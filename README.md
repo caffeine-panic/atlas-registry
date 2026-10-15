@@ -89,6 +89,8 @@ The demo workspace is deliberately isolated from Tauri IPC, the network, browser
 
 Choose **Settings → Interface language** to switch between English and Simplified Chinese. Atlas Registry never translates or rewrites protocol names, resource identifiers, metadata names, or server-provided values.
 
+The connection and resource panels can be resized and collapsed independently. Collapsed panels leave a narrow restore rail and give the remaining space to the resource details; reopening restores their saved widths.
+
 ## Known limitations
 
 - ZooKeeper SASL is not supported yet.

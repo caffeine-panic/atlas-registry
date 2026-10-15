@@ -35,6 +35,36 @@ test("connections and resources can be collapsed independently", () => {
   });
 });
 
+test("collapsing and reopening both panels preserves their resized widths", () => {
+  const resized = panelLayout.resizePanel(
+    panelLayout.resizePanel(
+      panelLayout.DEFAULT_PANEL_LAYOUT,
+      "connections",
+      50,
+      1_400,
+    ),
+    "resources",
+    210,
+    1_400,
+  );
+  const collapsed = panelLayout.togglePanel(
+    panelLayout.togglePanel(resized, "connections"),
+    "resources",
+  );
+  const restored = panelLayout.loadPanelLayout({
+    getItem: () => JSON.stringify({ version: 2, layout: collapsed }),
+  });
+
+  assert.deepEqual(restored.widths, { connections: 300, resources: 540 });
+  assert.deepEqual(
+    panelLayout.togglePanel(
+      panelLayout.togglePanel(restored, "resources"),
+      "connections",
+    ),
+    resized,
+  );
+});
+
 test("the last valid panel layout is restored on startup", () => {
   const storage = {
     getItem: () =>
