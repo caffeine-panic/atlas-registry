@@ -2,6 +2,10 @@
 
 本文描述代码的实际结构与设计不变量，供维护者和 AI 协作工具在动手前建立正确的心智模型。技术选型的历史背景见 [ADR-0001](ADR-0001-TAURI-PURE-RUST.md)。
 
+## 维护与交付平台
+
+当前质量门禁与后续发行仅面向 Apple Silicon（M 系列）Mac，目标为 `aarch64-apple-darwin`，安装格式为 app/DMG。真实服务兼容矩阵继续使用 Linux 容器运行六组协议契约；该基础设施不构建 Linux 桌面包。平台范围决策见 [ADR-0006](ADR-0006-APPLE-SILICON-ONLY-DELIVERY.md)。
+
 ## 进程模型
 
 单进程 Tauri 2 应用：React 19 WebView 负责交互，Rust 负责一切网络、凭据、磁盘 IO。WebView 的 CSP 禁止访问任何外部网络（`connect-src ipc:`），与注册中心的连接全部由 Rust 持有。

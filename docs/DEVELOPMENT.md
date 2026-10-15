@@ -70,7 +70,7 @@ AI Registry 只读浏览器复用同一 Nacos HTTP client、TLS、namespace、�
 
 如内部网络使用镜像仓库，可分别设置 `ATLAS_ETCD_IMAGE_REPOSITORY`、`ATLAS_ZOOKEEPER_IMAGE_REPOSITORY` 和 `ATLAS_NACOS_IMAGE_REPOSITORY`，值只包含仓库名，不包含版本 tag。Nacos 3.x 容器还会显式关闭仅用于隔离 fixture 的 Admin/Console 鉴权；这不改变应用对真实连接的认证处理。
 
-`.github/workflows/compatibility.yml` 每周及相关主干变更时执行六项真实服务契约；`.github/workflows/quality.yml` 在 Ubuntu 22.04、Windows 2025 与 macOS 15 上执行前端构建、Rust 测试/Clippy、完整安装包构建与安装验证。Linux 验证 DEB 安装和 AppImage 解包，Windows 验证 MSI administrative install 与 NSIS silent install，macOS 验证 app/DMG、签名结构和复制安装。`.github/workflows/release.yml` 只接受匹配应用版本的 tag，并生成受保护的四平台 Draft Release。
+`.github/workflows/compatibility.yml` 每周及相关主干变更时通过 Linux 容器执行六项真实服务契约；这些任务不构建桌面安装包。`.github/workflows/quality.yml` 仅在 Apple Silicon macOS runner 上执行前端构建、Rust 测试/Clippy、`aarch64-apple-darwin` app/DMG 构建和复制安装验证，并检查可执行文件为 arm64。`.github/workflows/release.yml` 只接受匹配应用版本的 tag，仅生成 Apple Silicon 的受保护 Draft Release。
 
 tag 发版、Draft Release、macOS 签名/公证 secrets 以及公开发布检查见 [RELEASING.md](./RELEASING.md)。发布 workflow 默认不会公开 release；缺少组织签名凭据时产物只能用于内部验证。
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { parse } from "yaml";
 
 const read = (path) =>
   readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -19,6 +20,55 @@ test("desktop updater is signed and served by the repository release channel", (
       !updater.pubkey.includes("PLACEHOLDER"),
     "a real updater public key must be embedded in the application",
   );
+});
+
+test("desktop quality and releases target Apple Silicon macOS only", () => {
+  const quality = parse(read(".github/workflows/quality.yml"));
+  const release = parse(read(".github/workflows/release.yml"));
+  const config = JSON.parse(read("src-tauri/tauri.conf.json"));
+
+  assert.deepEqual(Object.keys(quality.jobs), ["desktop"]);
+  assert.deepEqual(Object.keys(release.jobs), ["bundles"]);
+  for (const job of [quality.jobs.desktop, release.jobs.bundles]) {
+    assert.match(job["runs-on"], /^macos-/);
+    assert.equal(
+      job.strategy,
+      undefined,
+      "desktop platform matrices are retired",
+    );
+    const architecture = job.steps.find(
+      (step) => step.name === "Verify Apple Silicon runner",
+    );
+    assert.match(
+      architecture?.run ?? "",
+      /test\s+"\$\(uname\s+-m\)"\s*=\s*arm64/,
+    );
+    const rust = job.steps.find((step) =>
+      step.uses?.startsWith("dtolnay/rust-toolchain@"),
+    );
+    assert.equal(rust?.with?.targets, "aarch64-apple-darwin");
+  }
+
+  const action = release.jobs.bundles.steps.find((step) =>
+    step.uses?.startsWith("tauri-apps/tauri-action@"),
+  );
+  assert.equal(
+    action?.with?.args,
+    "--target aarch64-apple-darwin --bundles app,dmg",
+  );
+  const build = quality.jobs.desktop.steps.find(
+    (step) => step.name === "Build macOS install bundles",
+  );
+  assert.match(
+    build?.run ?? "",
+    /--target\s+aarch64-apple-darwin\s+--bundles\s+app,dmg/,
+  );
+  const verification = quality.jobs.desktop.steps.find(
+    (step) => step.name === "Verify and install macOS bundles",
+  );
+  assert.match(verification?.run ?? "", /lipo\s+-archs/);
+  assert.match(verification?.run ?? "", /=\s*arm64/);
+  assert.deepEqual(config.bundle?.targets, ["app", "dmg"]);
 });
 
 test("release workflow requires the private updater key without committing it", () => {
@@ -42,9 +92,10 @@ test("release workflow requires the private updater key without committing it", 
   assert.match(workflow, /includeUpdaterJson:\s*true/);
   assert.doesNotMatch(workflow, /uploadUpdaterJson|uploadUpdaterSignatures/);
 
-  const jobEnvironment =
-    workflow.match(/timeout-minutes:[\s\S]*?strategy:/)?.[0] ?? "";
-  assert.doesNotMatch(jobEnvironment, /APPLE_/);
+  const jobEnvironment = parse(workflow).jobs.bundles.env;
+  assert.ok(
+    Object.keys(jobEnvironment).every((key) => !key.startsWith("APPLE_")),
+  );
 
   const actionStep = workflow.slice(
     workflow.indexOf("- uses: tauri-apps/tauri-action"),

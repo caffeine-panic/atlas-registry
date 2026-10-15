@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-Atlas Registry 是一个跨平台桌面客户端，用统一的资源管理器访问 etcd、ZooKeeper 和 Nacos。它适合日常浏览配置、排查注册信息，以及执行带版本校验和审计记录的受控变更。
+Atlas Registry 是一个面向 Apple Silicon（M 系列）Mac 的桌面客户端，用统一的资源管理器访问 etcd、ZooKeeper 和 Nacos。它适合日常浏览配置、排查注册信息，以及执行带版本校验和审计记录的受控变更。
 
 ![Atlas Registry 合成演示工作区](docs/assets/atlas-registry-demo.png)
 
@@ -10,15 +10,13 @@ _截图由内置的只读演示工作区生成，其中的连接、端点、资�
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/caffeine-panic/atlas-registry/releases) 下载对应平台的安装包：
+后续仅发布 Apple Silicon（M 系列）Mac 版本。前往 [GitHub Releases](https://github.com/caffeine-panic/atlas-registry/releases) 下载：
 
-- macOS：DMG
-- Windows：MSI 或 NSIS 安装程序
-- Linux：DEB、RPM 或 AppImage
+- macOS / Apple Silicon：aarch64 DMG
 
 应用内可以从标题栏检查更新。更新包会在本地完成签名验证后再安装。
 
-当前公开安装包尚无 Apple Developer ID/公证或 Windows Authenticode 签名。macOS 产物仅有 ad-hoc 签名，macOS/Windows 可能提示安全警告或阻止安装。Tauri 更新签名只验证更新资产，不能替代操作系统的发行者信任认证。请只使用官方 Release 资产，并在安装前阅读对应发布说明。
+当前公开安装包仅有 ad-hoc 签名，尚无 Apple Developer ID 签名或公证，Gatekeeper 可能提示安全警告或阻止安装。Tauri 更新签名只验证更新资产，不能替代操作系统的发行者信任认证。请只使用官方 Release 资产，并在安装前阅读对应发布说明。
 
 ## 主要能力
 
@@ -88,7 +86,7 @@ AI Registry 浏览器按 Nacos 3.2.3 Admin API 契约验证，并逐类探测能
 
 ## 本地开发
 
-需要 Node.js、Rust stable、`protoc`，以及对应平台的 Tauri 2 系统依赖。
+需要 Apple Silicon Mac、Node.js 22、Rust stable、`protoc`，以及 macOS 的 Tauri 2 系统依赖。
 
 ```bash
 npm install
@@ -118,7 +116,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 - ZooKeeper SASL 尚未支持。
 - 单个 value 的内联读取和变更上限为 1 MiB。
-- 发布包尚未使用组织级 Apple Developer ID 或 Windows Authenticode 证书；安装前请查看对应 Release 说明。
+- 发布包尚未使用组织级 Apple Developer ID 证书或公证；安装前请查看对应 Release 说明。
 
 ## License
 

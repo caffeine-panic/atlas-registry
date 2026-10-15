@@ -35,7 +35,7 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": "all",
+    "targets": ["app", "dmg"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -49,10 +49,7 @@
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0NTJDOTVDNDcyQ0UzQzgKUldUSTR5eEhYTWxTWkMrUEpKSS9IOVBLOElpTGJ2aElpRW8zZUk5NDdvVVVEMzcxQUk5T2RzVEkK",
       "endpoints": [
         "https://github.com/caffeine-panic/atlas-registry/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
-      }
+      ]
     }
   }
 }

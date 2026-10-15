@@ -10,7 +10,7 @@
 
 **A production-safe desktop workbench for etcd, ZooKeeper, and Nacos.** Browse live registries, use protocol-native operations, and make version-checked changes with redacted local audit evidence.
 
-Atlas Registry is a cross-platform Tauri application with a React interface and a pure Rust core. It connects directly from your workstation—there is no admin server, browser extension, or sidecar to deploy.
+Atlas Registry is a Tauri application for Apple Silicon (M series) Macs, with a React interface and a pure Rust core. It connects directly from your workstation—there is no admin server, browser extension, or sidecar to deploy.
 
 ![Atlas Registry synthetic demo workspace](docs/assets/atlas-registry-demo.png)
 
@@ -31,15 +31,15 @@ _The screenshot is generated from the built-in read-only demo workspace. All pro
 
 Download the latest signed-update-compatible build from [GitHub Releases](https://github.com/caffeine-panic/atlas-registry/releases/latest).
 
-| Platform | Packages                    |
-| -------- | --------------------------- |
-| macOS    | Apple Silicon and Intel DMG |
-| Windows  | MSI and NSIS installer      |
-| Linux    | DEB, RPM, and AppImage      |
+Future releases target Apple Silicon (M series) Macs only.
+
+| Platform              | Package     |
+| --------------------- | ----------- |
+| macOS / Apple Silicon | aarch64 DMG |
 
 The application can check for updates from the title bar. Update artifacts are verified locally before installation. Operating-system installer signing status is documented in each release.
 
-Current public installers do not have Apple Developer ID/notarization or Windows Authenticode signing. macOS uses ad-hoc signing; macOS and Windows may warn or block installation. Tauri update signatures verify update artifacts, not operating-system publisher trust. Use only the official release assets and review the release notes before installing.
+Current public installers use ad-hoc signing and do not have Apple Developer ID signing or notarization. Gatekeeper may warn or block installation. Tauri update signatures verify update artifacts, not operating-system publisher trust. Use only the official release assets and review the release notes before installing.
 
 For an SSH-only etcd endpoint, enable **Connect through an SSH tunnel** in the connection form, enter the bastion details, and pin the fingerprint reported by your administrator. SSH passwords and private-key passphrases are stored separately in the operating-system credential vault; Atlas Registry rejects a changed host key instead of silently trusting it.
 
@@ -95,11 +95,11 @@ The connection and resource panels can be resized and collapsed independently. C
 
 - ZooKeeper SASL is not supported yet.
 - Inline reads and mutations are limited to 1 MiB per value.
-- Public installers do not yet use organization-level Apple Developer ID or Windows Authenticode certificates; consult the release notes before installation.
+- Public installers do not yet use organization-level Apple Developer ID certificates or notarization; consult the release notes before installation.
 
 ## Development
 
-Requirements: Node.js 22, Rust stable, `protoc`, and the [Tauri 2 system dependencies](https://tauri.app/start/prerequisites/).
+Requirements: an Apple Silicon Mac, Node.js 22, Rust stable, `protoc`, and the [Tauri 2 system dependencies](https://tauri.app/start/prerequisites/).
 
 ```bash
 npm install

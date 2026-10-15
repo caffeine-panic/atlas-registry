@@ -14,46 +14,21 @@ concurrency:
 
 jobs:
   bundles:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    name: macOS Apple Silicon
+    runs-on: macos-15
     environment: release
     timeout-minutes: 60
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux x64
-            runner: ubuntu-22.04
-            args: ""
-          - name: Windows x64
-            runner: windows-2025
-            args: ""
-          - name: macOS Apple Silicon
-            runner: macos-15
-            args: "--target aarch64-apple-darwin"
-          - name: macOS Intel
-            runner: macos-15
-            args: "--target x86_64-apple-darwin"
-
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = arm64
 
       - name: Install macOS protobuf compiler
-        if: runner.os == 'macOS'
         run: brew install protobuf
-
-      - name: Install Windows protobuf compiler
-        if: runner.os == 'Windows'
-        run: choco install protoc --no-progress -y
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -63,7 +38,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: stable
-          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
@@ -85,7 +60,6 @@ jobs:
           test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
       - name: Configure macOS signing
-        if: runner.os == 'macOS'
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -128,8 +102,8 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: Atlas Registry v__VERSION__
-          releaseBody: Download the bundle for your platform. This release remains a draft until platform signing and verification are complete.
+          releaseBody: Download the Apple Silicon (M-series) macOS DMG. This release remains a draft until signing and verification are complete.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: --target aarch64-apple-darwin --bundles app,dmg

@@ -6,6 +6,8 @@
 
 Tauri 2 桌面客户端：React 19 WebView + 纯 Rust 后端，统一访问 etcd / ZooKeeper / Nacos。没有 Node 服务端、没有 sidecar 进程。架构细节见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，技术选型背景见 [docs/ADR-0001-TAURI-PURE-RUST.md](docs/ADR-0001-TAURI-PURE-RUST.md)。
 
+当前维护与后续发行仅面向 Apple Silicon（M 系列）Mac，目标为 `aarch64-apple-darwin`，仅构建 app/DMG。质量和发布工作流不再构建 Windows、Linux 或 Intel Mac 版本。真实服务兼容矩阵保留 Linux 容器作为测试基础设施；详见 [ADR-0006](docs/ADR-0006-APPLE-SILICON-ONLY-DELIVERY.md)。
+
 ## 目录地图
 
 | 路径                            | 内容                                                                                                                                                                                     |

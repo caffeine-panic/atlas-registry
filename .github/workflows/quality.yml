@@ -10,36 +10,18 @@ permissions:
 
 jobs:
   desktop:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
+    name: macOS Apple Silicon
+    runs-on: macos-15
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Ubuntu 22.04
-            runner: ubuntu-22.04
-          - name: Windows 2025
-            runner: windows-2025
-          - name: macOS 15
-            runner: macos-15
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf protobuf-compiler
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = arm64
 
       - name: Install macOS protobuf compiler
-        if: runner.os == 'macOS'
         run: brew install protobuf
-
-      - name: Install Windows protobuf compiler
-        if: runner.os == 'Windows'
-        run: choco install protoc --no-progress -y
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -50,6 +32,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy, rustfmt
+          targets: aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
@@ -65,19 +48,12 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Clear generated TypeScript contracts
-        if: runner.os != 'Windows'
         run: node scripts/clear-generated-contracts.mjs
 
       - name: Run Rust tests
-        if: runner.os != 'Windows'
         run: cargo test --manifest-path src-tauri/Cargo.toml --quiet
 
-      - name: Compile Rust tests on Windows
-        if: runner.os == 'Windows'
-        run: cargo test --manifest-path src-tauri/Cargo.toml --no-run --quiet
-
       - name: Verify generated TypeScript contracts are current
-        if: runner.os != 'Windows'
         run: node scripts/verify-generated-contracts.mjs
 
       - name: Build frontend
@@ -93,82 +69,22 @@ jobs:
         run: npm run test:ui
 
       - name: Configure ad-hoc macOS signing for CI bundles
-        if: runner.os == 'macOS'
         shell: bash
         run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
 
-      - name: Build Linux install bundles
-        if: runner.os == 'Linux'
-        run: npm run tauri build -- --bundles deb,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
-
-      - name: Build Windows install bundles
-        if: runner.os == 'Windows'
-        run: npm run tauri build -- --bundles msi,nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
-
       - name: Build macOS install bundles
-        if: runner.os == 'macOS'
-        run: npm run tauri build -- --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
-
-      - name: Verify and install Linux bundles
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          deb="$(find src-tauri/target/release/bundle/deb -name '*.deb' -type f -print -quit)"
-          appimage="$(find src-tauri/target/release/bundle/appimage -name '*.AppImage' -type f -print -quit)"
-          test -n "$deb"
-          test -n "$appimage"
-          dpkg-deb --info "$deb"
-          package="$(dpkg-deb -f "$deb" Package)"
-          sudo dpkg -i "$deb"
-          installed_binary="$(dpkg -L "$package" | grep '/usr/bin/' | head -n 1)"
-          test -x "$installed_binary"
-          chmod +x "$appimage"
-          extract_dir="$RUNNER_TEMP/atlas-appimage"
-          mkdir -p "$extract_dir"
-          cd "$extract_dir"
-          "$GITHUB_WORKSPACE/$appimage" --appimage-extract >/dev/null
-          test -x squashfs-root/AppRun
-          sha256sum "$GITHUB_WORKSPACE/$deb" "$GITHUB_WORKSPACE/$appimage"
-
-      - name: Verify and administratively install Windows bundles
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $msi = Get-ChildItem src-tauri/target/release/bundle/msi -Filter *.msi -Recurse | Select-Object -First 1
-          $nsis = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe -Recurse | Select-Object -First 1
-          if (-not $msi -or -not $nsis) { throw 'Windows MSI or NSIS bundle is missing' }
-          $target = Join-Path $env:RUNNER_TEMP 'atlas-msi-install'
-          $arguments = @('/a', ('"{0}"' -f $msi.FullName), '/qn', ('TARGETDIR="{0}"' -f $target))
-          $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "MSI administrative install failed with $($process.ExitCode)" }
-          $msiInstalled = Get-ChildItem $target -Filter atlas-registry.exe -Recurse | Select-Object -First 1
-          if (-not $msiInstalled) { throw 'MSI-installed atlas-registry.exe was not found' }
-          $nsisTarget = Join-Path $env:RUNNER_TEMP 'atlas-nsis-install'
-          $process = Start-Process $nsis.FullName -ArgumentList @('/S', "/D=$nsisTarget") -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "NSIS silent install failed with $($process.ExitCode)" }
-          $nsisInstalled = Get-ChildItem $nsisTarget -Filter atlas-registry.exe -Recurse | Select-Object -First 1
-          if (-not $nsisInstalled) { throw 'NSIS-installed atlas-registry.exe was not found' }
-          Get-FileHash $msi.FullName -Algorithm SHA256
-          Get-FileHash $nsis.FullName -Algorithm SHA256
-          Get-FileHash $msiInstalled.FullName -Algorithm SHA256
-          Get-FileHash $nsisInstalled.FullName -Algorithm SHA256
-          foreach ($bundle in @($msi.FullName, $nsis.FullName, $msiInstalled.FullName, $nsisInstalled.FullName)) {
-            $signature = Get-AuthenticodeSignature $bundle
-            $signature | Format-List Path, Status, StatusMessage, SignerCertificate
-            if ($signature.Status -eq 'HashMismatch') { throw "Authenticode hash mismatch: $bundle" }
-          }
+        run: npm run tauri build -- --target aarch64-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Verify and install macOS bundles
-        if: runner.os == 'macOS'
         shell: bash
         run: |
           set -Eeuo pipefail
-          app="$(find src-tauri/target/release/bundle/macos -name '*.app' -type d -print -quit)"
-          dmg="$(find src-tauri/target/release/bundle/dmg -name '*.dmg' -type f -print -quit)"
+          app="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos -name '*.app' -type d -print -quit)"
+          dmg="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name '*.dmg' -type f -print -quit)"
           test -n "$app"
           test -n "$dmg"
+          executable="$(plutil -extract CFBundleExecutable raw "$app/Contents/Info.plist")"
+          test "$(lipo -archs "$app/Contents/MacOS/$executable")" = arm64
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign --display --deep --verbose=4 "$app"
           hdiutil verify "$dmg"
