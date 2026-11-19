@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-registry"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

@@ -84,6 +84,8 @@ AI Registry 浏览器按 Nacos 3.2.3 Admin API 契约验证，并逐类探测能
 
 可在 **设置 → 界面语言** 中切换 English / 简体中文。协议名、资源标识、元数据名和服务端返回的 value 永远不会被翻译或改写。
 
+滚动资源内容或元数据时，资源路径、操作按钮、摘要、实时监听区和编辑器工具栏固定在详情面板顶部。
+
 ## 本地开发
 
 需要 Apple Silicon Mac、Node.js 22、Rust stable、`protoc`，以及 macOS 的 Tauri 2 系统依赖。

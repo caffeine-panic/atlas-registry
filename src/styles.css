@@ -606,9 +606,26 @@ html[data-platform="macos"] .topbar {
 }
 
 .detail {
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 24px 28px;
+}
+.detail-header {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  max-height: 75%;
+}
+.detail-summary {
+  overflow: auto;
+}
+.detail-body {
+  flex: 1;
+  overflow: auto;
 }
 .detail-empty {
   display: grid;
@@ -629,14 +646,17 @@ html[data-platform="macos"] .topbar {
 }
 .breadcrumb {
   color: #94a4b7;
+  overflow-wrap: anywhere;
 }
 .breadcrumb b {
   color: #e8f0f8;
 }
 .detail-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: end;
   justify-content: space-between;
+  gap: 9px;
   margin: 26px 0 18px;
 }
 .detail-title h1 {
@@ -648,6 +668,7 @@ html[data-platform="macos"] .topbar {
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
 }
 .stats {
@@ -673,6 +694,7 @@ html[data-platform="macos"] .topbar {
   overflow: hidden;
   font-size: 18px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .watch-panel {
   display: flex;
@@ -763,6 +785,7 @@ html[data-platform="macos"] .topbar {
 }
 .editor-header {
   display: flex;
+  flex: none;
   justify-content: space-between;
   padding: 8px 13px;
   border: 1px solid #263447;
@@ -830,6 +853,39 @@ html[data-platform="macos"] .topbar {
 .metadata-row b {
   overflow-wrap: anywhere;
   color: #cbd7e3;
+}
+
+@container (max-width: 540px) {
+  .breadcrumb {
+    font-size: 13px;
+  }
+  .detail-title {
+    margin: 12px 0 10px;
+  }
+  .detail-title h1 {
+    font-size: 21px;
+  }
+  .actions {
+    gap: 5px;
+  }
+  .actions .button,
+  .watch-actions .button {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  .stats,
+  .watch-panel {
+    margin-bottom: 8px;
+  }
+  .stats div,
+  .watch-panel {
+    padding: 8px;
+  }
+  .watch-actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }
 
 .toast {
@@ -1329,6 +1385,7 @@ html[data-platform="macos"] .topbar {
 .safe-change-main,
 .safe-change-sidebar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 14px;
 }
@@ -2136,7 +2193,7 @@ html[data-platform="macos"] .topbar {
     grid-template-columns: 1fr 1fr;
   }
   .safe-change-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .safe-change-diff {
     max-height: 320px;

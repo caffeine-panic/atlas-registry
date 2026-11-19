@@ -237,3 +237,15 @@ test("persisted inline widths cannot override collapsed panel tracks", () => {
 test("truncated resource names reveal their complete identifier on hover", () => {
   assert.match(appSource, /className="node-name"\s+title=\{resourceLabel\}/);
 });
+
+test("resource controls stay above the independently scrolling value and metadata", () => {
+  assert.match(
+    appSource,
+    /<header\s+className="detail-header">\s*<div\s+className="detail-summary">\s*<div\s+className="breadcrumb"[\s\S]*?className="editor-header"[\s\S]*?<\/header>\s*<div\s+className="detail-body">\s*<ConfigEditor\b[\s\S]*?className="metadata"/,
+  );
+  assert.match(declarationBlock(".detail"), /overflow:\s*hidden\s*;/);
+  assert.match(declarationBlock(".detail-summary"), /overflow:\s*auto\s*;/);
+  assert.match(declarationBlock(".editor-header"), /flex:\s*none\s*;/);
+  assert.match(declarationBlock(".detail-body"), /flex:\s*1\s*;/);
+  assert.match(declarationBlock(".detail-body"), /overflow:\s*auto\s*;/);
+});

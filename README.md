@@ -91,6 +91,8 @@ Choose **Settings → Interface language** to switch between English and Simplif
 
 The connection and resource panels can be resized and collapsed independently. Collapsed panels leave a narrow restore rail and give the remaining space to the resource details; reopening restores their saved widths.
 
+When you scroll a resource value or its metadata, the resource path, actions, summary, live watch controls, and editor toolbar stay visible at the top of the detail panel.
+
 ## Known limitations
 
 - ZooKeeper SASL is not supported yet.

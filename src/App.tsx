@@ -3362,241 +3362,249 @@ export function App() {
             </div>
           ) : (
             <>
-              <div className="breadcrumb">
-                {selectedProfile?.name} /{" "}
-                <b>{addressLabel(document.address)}</b>
-              </div>
-              <div className="detail-title">
-                <div>
-                  <span className="eyebrow">RESOURCE</span>
-                  <h1>{document.name}</h1>
-                </div>
-                <div className="actions">
-                  {document.address.type === "nacosConfig" && (
-                    <button
-                      className="button"
-                      disabled={demoMode || busy}
-                      onClick={openServerHistory}
-                    >
-                      {t("resource.serverHistory")}
-                    </button>
-                  )}
-                  {document.address.type === "nacosConfig" && (
-                    <button
-                      className="button"
-                      disabled={demoMode || busy || !writeAllowed}
-                      onClick={() => setNacosNativeOpen(true)}
-                    >
-                      {t("resource.serviceManagement")}
-                    </button>
-                  )}
-                  {document.address.type === "etcd" && (
-                    <button
-                      className="button"
-                      disabled={busy || !writeAllowed}
-                      onClick={() => void openNativeInfo()}
-                    >
-                      Lease
-                    </button>
-                  )}
-                  {document.address.type === "zookeeper" && (
-                    <button
-                      className="button"
-                      disabled={busy || !writeAllowed}
-                      onClick={() => void openNativeInfo()}
-                    >
-                      ACL
-                    </button>
-                  )}
-                  <button
-                    className="button"
-                    disabled={demoMode || busy}
-                    onClick={openExportDialog}
+              <header className="detail-header">
+                <div className="detail-summary">
+                  <div className="breadcrumb">
+                    {selectedProfile?.name} /{" "}
+                    <b>{addressLabel(document.address)}</b>
+                  </div>
+                  <div className="detail-title">
+                    <div>
+                      <span className="eyebrow">RESOURCE</span>
+                      <h1>{document.name}</h1>
+                    </div>
+                    <div className="actions">
+                      {document.address.type === "nacosConfig" && (
+                        <button
+                          className="button"
+                          disabled={demoMode || busy}
+                          onClick={openServerHistory}
+                        >
+                          {t("resource.serverHistory")}
+                        </button>
+                      )}
+                      {document.address.type === "nacosConfig" && (
+                        <button
+                          className="button"
+                          disabled={demoMode || busy || !writeAllowed}
+                          onClick={() => setNacosNativeOpen(true)}
+                        >
+                          {t("resource.serviceManagement")}
+                        </button>
+                      )}
+                      {document.address.type === "etcd" && (
+                        <button
+                          className="button"
+                          disabled={busy || !writeAllowed}
+                          onClick={() => void openNativeInfo()}
+                        >
+                          Lease
+                        </button>
+                      )}
+                      {document.address.type === "zookeeper" && (
+                        <button
+                          className="button"
+                          disabled={busy || !writeAllowed}
+                          onClick={() => void openNativeInfo()}
+                        >
+                          ACL
+                        </button>
+                      )}
+                      <button
+                        className="button"
+                        disabled={demoMode || busy}
+                        onClick={openExportDialog}
+                      >
+                        {t("resource.export")}
+                      </button>
+                      <button
+                        className="button"
+                        disabled={busy}
+                        onClick={openResourceComparison}
+                      >
+                        {t("resource.compare")}
+                      </button>
+                      <button
+                        className="button danger"
+                        disabled={
+                          demoMode || busy || !document.version || !writeAllowed
+                        }
+                        onClick={prepareDelete}
+                      >
+                        {t("resource.delete")}
+                      </button>
+                      <button
+                        className="button primary"
+                        disabled={
+                          demoMode ||
+                          busy ||
+                          !writeAllowed ||
+                          !document.version ||
+                          draftValue === document.value.content
+                        }
+                        onClick={prepareUpdate}
+                      >
+                        {t("resource.safeChange")}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="stats">
+                    <div>
+                      <span>{t("resource.version")}</span>
+                      <strong>{document.version || "—"}</strong>
+                    </div>
+                    <div>
+                      <span>{t("resource.encoding")}</span>
+                      <strong>{document.value.encoding.toUpperCase()}</strong>
+                    </div>
+                    <div>
+                      <span>{t("resource.size")}</span>
+                      <strong>
+                        {document.value.sizeBytes.toLocaleString()} B
+                      </strong>
+                    </div>
+                  </div>
+                  <div
+                    className={`watch-panel ${resourceWatch?.state ?? "idle"} ${resourceWatch?.remoteChanged ? "changed" : ""}`}
                   >
-                    {t("resource.export")}
-                  </button>
-                  <button
-                    className="button"
-                    disabled={busy}
-                    onClick={openResourceComparison}
-                  >
-                    {t("resource.compare")}
-                  </button>
-                  <button
-                    className="button danger"
-                    disabled={
-                      demoMode || busy || !document.version || !writeAllowed
-                    }
-                    onClick={prepareDelete}
-                  >
-                    {t("resource.delete")}
-                  </button>
-                  <button
-                    className="button primary"
-                    disabled={
-                      demoMode ||
-                      busy ||
-                      !writeAllowed ||
-                      !document.version ||
-                      draftValue === document.value.content
-                    }
-                    onClick={prepareUpdate}
-                  >
-                    {t("resource.safeChange")}
-                  </button>
-                </div>
-              </div>
-              <div className="stats">
-                <div>
-                  <span>{t("resource.version")}</span>
-                  <strong>{document.version || "—"}</strong>
-                </div>
-                <div>
-                  <span>{t("resource.encoding")}</span>
-                  <strong>{document.value.encoding.toUpperCase()}</strong>
-                </div>
-                <div>
-                  <span>{t("resource.size")}</span>
-                  <strong>{document.value.sizeBytes.toLocaleString()} B</strong>
-                </div>
-              </div>
-              <div
-                className={`watch-panel ${resourceWatch?.state ?? "idle"} ${resourceWatch?.remoteChanged ? "changed" : ""}`}
-              >
-                <div className="watch-summary">
-                  <span className="watch-pulse" />
-                  <div>
-                    <b>
-                      {resourceWatch
-                        ? t(watchStatusKeys[resourceWatch.state])
-                        : t("resource.watchIdle")}
-                    </b>
-                    <span>
-                      {resourceWatch?.message
-                        ? `${resourceWatch.message}${
-                            resourceWatch.retryInMs
-                              ? t("resource.watchRetry", {
-                                  milliseconds: resourceWatch.retryInMs,
+                    <div className="watch-summary">
+                      <span className="watch-pulse" />
+                      <div>
+                        <b>
+                          {resourceWatch
+                            ? t(watchStatusKeys[resourceWatch.state])
+                            : t("resource.watchIdle")}
+                        </b>
+                        <span>
+                          {resourceWatch?.message
+                            ? `${resourceWatch.message}${
+                                resourceWatch.retryInMs
+                                  ? t("resource.watchRetry", {
+                                      milliseconds: resourceWatch.retryInMs,
+                                    })
+                                  : ""
+                              }`
+                            : resourceWatch?.lastChange
+                              ? t("resource.watchChange", {
+                                  change: t(
+                                    watchChangeKeys[
+                                      resourceWatch.lastChange.change
+                                    ],
+                                  ),
+                                  version:
+                                    resourceWatch.lastChange.version ??
+                                    t("common.unknown"),
                                 })
-                              : ""
-                          }`
-                        : resourceWatch?.lastChange
-                          ? t("resource.watchChange", {
-                              change: t(
-                                watchChangeKeys[
-                                  resourceWatch.lastChange.change
-                                ],
-                              ),
-                              version:
-                                resourceWatch.lastChange.version ??
-                                t("common.unknown"),
-                            })
-                          : t("resource.watchPrivacy")}
-                    </span>
+                              : t("resource.watchPrivacy")}
+                        </span>
+                      </div>
+                      {resourceWatch && (
+                        <span className="watch-count">
+                          {t("resource.changeCount", {
+                            count: resourceWatch.changeCount,
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    <div className="watch-actions">
+                      {resourceWatch?.remoteChanged && (
+                        <button
+                          className="button primary"
+                          disabled={busy}
+                          onClick={() => void refreshWatchedResource()}
+                        >
+                          {t("resource.readLatest")}
+                        </button>
+                      )}
+                      <button
+                        className="button"
+                        disabled={demoMode || busy}
+                        onClick={() =>
+                          void (watchBackendIsActive
+                            ? stopResourceWatch()
+                            : startResourceWatch())
+                        }
+                      >
+                        {watchBackendIsActive
+                          ? t("resource.stopWatch")
+                          : resourceWatch
+                            ? t("resource.restartWatch")
+                            : t("resource.startWatch")}
+                      </button>
+                    </div>
                   </div>
-                  {resourceWatch && (
-                    <span className="watch-count">
-                      {t("resource.changeCount", {
-                        count: resourceWatch.changeCount,
-                      })}
-                    </span>
+                  {document.value.encoding === "base64" && (
+                    <div className="binary-warning">
+                      {t("resource.binaryWarning")}
+                    </div>
                   )}
                 </div>
-                <div className="watch-actions">
-                  {resourceWatch?.remoteChanged && (
-                    <button
-                      className="button primary"
-                      disabled={busy}
-                      onClick={() => void refreshWatchedResource()}
+                <div className="editor-header">
+                  <div className="editor-language-controls">
+                    <select
+                      aria-label={t("resource.editorLanguage")}
+                      value={editorLanguage}
+                      disabled={busy || document.value.encoding === "base64"}
+                      onChange={(event) => {
+                        setEditorLanguageOverride(
+                          event.target.value as ConfigLanguage,
+                        );
+                        setValidationIssue(undefined);
+                      }}
                     >
-                      {t("resource.readLatest")}
+                      {Object.entries(configLanguageLabels).map(
+                        ([language, label]) => (
+                          <option key={language} value={language}>
+                            {label}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                    <button
+                      className="button"
+                      disabled={busy || document.value.encoding === "base64"}
+                      onClick={validateEditorContent}
+                    >
+                      {t("resource.validateSyntax")}
                     </button>
-                  )}
-                  <button
-                    className="button"
-                    disabled={demoMode || busy}
-                    onClick={() =>
-                      void (watchBackendIsActive
-                        ? stopResourceWatch()
-                        : startResourceWatch())
-                    }
-                  >
-                    {watchBackendIsActive
-                      ? t("resource.stopWatch")
-                      : resourceWatch
-                        ? t("resource.restartWatch")
-                        : t("resource.startWatch")}
-                  </button>
-                </div>
-              </div>
-              {document.value.encoding === "base64" && (
-                <div className="binary-warning">
-                  {t("resource.binaryWarning")}
-                </div>
-              )}
-              <div className="editor-header">
-                <div className="editor-language-controls">
-                  <select
-                    aria-label={t("resource.editorLanguage")}
-                    value={editorLanguage}
-                    disabled={busy || document.value.encoding === "base64"}
-                    onChange={(event) => {
-                      setEditorLanguageOverride(
-                        event.target.value as ConfigLanguage,
-                      );
-                      setValidationIssue(undefined);
-                    }}
-                  >
-                    {Object.entries(configLanguageLabels).map(
-                      ([language, label]) => (
-                        <option key={language} value={language}>
-                          {label}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                  <button
-                    className="button"
-                    disabled={busy || document.value.encoding === "base64"}
-                    onClick={validateEditorContent}
-                  >
-                    {t("resource.validateSyntax")}
-                  </button>
-                </div>
-                <span>
-                  {draftValue === document.value.content
-                    ? document.value.encoding.toUpperCase()
-                    : `${document.value.encoding.toUpperCase()} · ${t(
-                        "resource.modified",
-                      )}`}
-                </span>
-              </div>
-              <ConfigEditor
-                ref={editorRef}
-                value={draftValue}
-                disabled={demoMode || busy}
-                language={editorLanguage}
-                onChange={(value) => {
-                  setDraftValue(value);
-                  setValidationIssue(undefined);
-                }}
-              />
-              {validationIssue && (
-                <div className="validation-error">
-                  {t("resource.validationLocation", {
-                    line: validationIssue.line,
-                    column: validationIssue.column,
-                    message: validationIssue.message,
-                  })}
-                </div>
-              )}
-              <div className="metadata">
-                {Object.entries(document.metadata).map(([name, value]) => (
-                  <div className="metadata-row" key={name}>
-                    <span>{name}</span>
-                    <b>{value || "—"}</b>
                   </div>
-                ))}
+                  <span>
+                    {draftValue === document.value.content
+                      ? document.value.encoding.toUpperCase()
+                      : `${document.value.encoding.toUpperCase()} · ${t(
+                          "resource.modified",
+                        )}`}
+                  </span>
+                </div>
+              </header>
+              <div className="detail-body">
+                <ConfigEditor
+                  ref={editorRef}
+                  value={draftValue}
+                  disabled={demoMode || busy}
+                  language={editorLanguage}
+                  onChange={(value) => {
+                    setDraftValue(value);
+                    setValidationIssue(undefined);
+                  }}
+                />
+                {validationIssue && (
+                  <div className="validation-error">
+                    {t("resource.validationLocation", {
+                      line: validationIssue.line,
+                      column: validationIssue.column,
+                      message: validationIssue.message,
+                    })}
+                  </div>
+                )}
+                <div className="metadata">
+                  {Object.entries(document.metadata).map(([name, value]) => (
+                    <div className="metadata-row" key={name}>
+                      <span>{name}</span>
+                      <b>{value || "—"}</b>
+                    </div>
+                  ))}
+                </div>
               </div>
             </>
           )}

@@ -338,3 +338,18 @@ function transpile(source) {
 function dataUrl(source) {
   return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 }
+
+test("long diff lines stay inside the safe change column at both layout widths", () => {
+  const css = readFileSync(
+    new URL("../src/styles.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    css,
+    /\.safe-change-main,\s*\.safe-change-sidebar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*1100px\)\s*\{[^@]*?\.safe-change-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
+});
